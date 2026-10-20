@@ -17,6 +17,11 @@
 .clinic-page-refresh{flex:none;min-height:40px;padding:9px 16px;font-size:13px;white-space:nowrap}
 .clinic-page-refresh:disabled{opacity:.6;cursor:wait}
 @media(max-width:560px){.clinic-page-header{align-items:flex-start;flex-direction:column;gap:14px;margin-bottom:18px;padding-bottom:16px}.clinic-page-header h1{font-size:26px}.clinic-page-header p{font-size:13px}.clinic-page-refresh{align-self:flex-start}}
+
+/* Mantém as ações principais da área clínica no mesmo padrão visual. */
+.workspace .content .primary{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 14px;border:1px solid var(--brand-teal-strong);border-radius:9px;background:var(--brand-teal-strong);color:#fff;font:650 13px var(--font-sans);line-height:1.2;box-shadow:none;cursor:pointer}
+.workspace .content .primary:hover:not(:disabled){filter:brightness(.95)}
+.workspace .content .primary:disabled{opacity:.6;cursor:wait}
 .primary,.module-grid button{background:var(--tenant-accent,var(--brand-teal-strong));border-color:var(--tenant-accent,var(--brand-teal-strong));color:#fff}.primary:hover,.module-grid button:hover{filter:brightness(.92)}
 .notice{background:var(--state-info-bg);border-color:#cddfe6;color:var(--state-info);font-size:12px}.calendar-error{color:var(--state-danger);background:var(--state-danger-bg);border-color:#f0ccc8}
 .detail-section,.panel,.patient-profile,.patient-import,.record-list article,.conversation-row,.task-card,.module-grid>section,.module-grid>form{border-color:var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card)}
