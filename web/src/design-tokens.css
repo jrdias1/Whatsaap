@@ -1,0 +1,64 @@
+:root {
+  color-scheme: light;
+  --brand-ink: #132c3a;
+  --brand-ink-raised: #1b3b49;
+  --brand-ink-soft: #214653;
+  --brand-teal: #0d9488;
+  --brand-teal-strong: #087e72;
+  --brand-teal-pale: #e5f5f2;
+  --surface-page: #f4f7f8;
+  --surface-card: #ffffff;
+  --text-primary: #183340;
+  --text-secondary: #526a74;
+  --text-muted: #5d727b;
+  --border-subtle: #e5ecee;
+  --state-success: #087e72;
+  --state-success-bg: #e5f5f2;
+  --state-warning: #a65a12;
+  --state-warning-bg: #fff4e7;
+  --state-danger: #b64b42;
+  --state-danger-bg: #fff0ee;
+  --state-info: #365f73;
+  --state-info-bg: #edf4f7;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-card: 0 2px 8px rgb(19 44 58 / 4%);
+  --shadow-floating: 0 14px 36px rgb(19 44 58 / 12%);
+  --sidebar-width: 264px;
+  --control-height: 42px;
+  --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
+  --type-display: 28px;
+  --type-section: 20px;
+  --type-card-title: 18px;
+  --type-body: 16px;
+  --type-ui: 14px;
+  --type-meta: 13px;
+  --type-metric: 30px;
+  --line-reading: 1.55;
+}
+
+.session-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--surface-page);
+  color: var(--text-secondary);
+  font: 600 15px var(--font-sans);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgb(13 148 136 / 35%);
+  outline-offset: 2px;
+}

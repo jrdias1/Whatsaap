@@ -1,0 +1,14 @@
+.account-security-form{max-width:720px;padding:22px;border:1px solid var(--border-subtle,#d9e3e6);border-radius:14px;background:#fff;color:var(--brand-ink,#193942)}
+.account-security-form h2{margin:0 0 8px;font-size:20px}
+.account-security-form>p{margin:0 0 18px;color:var(--text-secondary,#526a74);font-size:16px;line-height:1.55}
+.account-security-form form{display:grid;gap:14px;max-width:520px}
+.account-security-form label{display:grid;gap:6px;font-size:14px;font-weight:650}
+.account-security-form input{min-height:44px;padding:10px 12px;border:1px solid var(--border-subtle,#d9e3e6);border-radius:8px;background:#fff;color:var(--text-primary,#183039);font:inherit}
+.account-security-form input:focus-visible{outline:3px solid #0b8177;outline-offset:2px}
+.account-security-form .primary{justify-self:start;min-height:44px;padding:0 18px}
+.initial-password-form{display:grid;gap:8px;margin-top:18px}
+.initial-password-form label{display:grid;gap:6px;margin:5px 0;font-size:14px;font-weight:700}
+.initial-password-form input{box-sizing:border-box;width:100%;min-height:44px}
+
+.initial-password-field{display:grid;gap:6px}.initial-password-field>label{font-size:14px;font-weight:700}.initial-password-field>small{color:#5b6770;font-size:13px;line-height:1.45}.initial-password-control{display:flex;gap:8px}.initial-password-control input{flex:1;min-width:0}.initial-password-control button{min-width:72px;border:1px solid var(--border-subtle,#cbdadd);border-radius:var(--radius-sm,6px);background:#fff;color:var(--brand-teal-strong,#006e65);font:600 13px var(--font-sans,sans-serif);cursor:pointer}.initial-password-control button:focus-visible{outline:3px solid #0b8177;outline-offset:2px}.initial-password-form>.primary{width:100%;min-height:44px}
+@media(max-width:480px){.login-card{padding:24px 18px}.initial-password-control button{min-width:64px}}

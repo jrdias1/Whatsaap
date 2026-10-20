@@ -1,0 +1,485 @@
+/* Shared readability layer: keeps the established Essencial palette and layout. */
+.platform-shell,
+.layout {
+  font-family: var(--font-sans);
+  font-size: var(--type-body);
+  line-height: var(--line-reading);
+}
+
+.login-card p {
+  color: var(--text-secondary);
+  font-size: var(--type-ui);
+  line-height: 1.5;
+}
+
+.login-card > label {
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.login-card .brand small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+}
+
+.login-card button.primary {
+  min-height: 44px;
+  font-size: var(--type-ui);
+}
+
+.platform-shell :is(button, input, select, textarea),
+.layout :is(button, input, select, textarea) {
+  font-family: var(--font-sans);
+  font-size: var(--type-ui);
+}
+
+.platform-shell :is(button, a, input, select, textarea, summary):focus-visible,
+.layout :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 3px solid rgb(13 148 136 / 55%);
+  outline-offset: 2px;
+}
+
+/* Platform administration */
+.platform-shell .platform-nav button,
+.platform-shell .platform-logout,
+.platform-shell .platform-refresh,
+.platform-shell .platform-button,
+.platform-shell .platform-text-button,
+.platform-shell .platform-tabs button,
+.platform-shell .platform-back,
+.platform-shell .platform-search input,
+.platform-shell .platform-form input,
+.platform-shell .platform-form select,
+.platform-shell .platform-reauth input {
+  font-size: var(--type-ui);
+}
+
+.platform-shell :is(.platform-context b, .platform-nav-label, .platform-eyebrow) {
+  font-size: var(--type-meta);
+}
+
+.platform-shell :is(.platform-context small, .platform-user b, .platform-user small,
+  .platform-breadcrumb, .platform-global-badge, .platform-page-heading p,
+  .platform-detail-title p, .platform-info-grid p, .platform-callout,
+  .platform-success, .platform-loading, .platform-card-heading p,
+  .platform-section-heading p, .platform-form-note, .platform-invite p,
+  .platform-plan-card li, .platform-subscription-summary p,
+  .platform-subscription-summary small) {
+  font-size: var(--type-meta);
+}
+
+.platform-shell :is(.platform-page-heading h1, .platform-detail-title h2) {
+  font-size: var(--type-display);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.platform-shell :is(.platform-section-heading h3, .platform-card-heading h3,
+  .platform-info-grid h3, .platform-ledger h3, .platform-form-admin h3,
+  .platform-invite h3, .platform-plan-title h3) {
+  font-size: var(--type-card-title);
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.platform-shell :is(.platform-stat-top, .platform-stat small, .platform-period,
+  .platform-tenant-meta small, .platform-info-grid p small,
+  .platform-detail-title p,
+  .platform-form fieldset legend, .platform-table, .platform-table th,
+  .platform-table td, .platform-table td small, .platform-badge,
+  .platform-empty span, .platform-empty b, .platform-invite dl,
+  .platform-invite code, .platform-plan-title strong,
+  .platform-plan-title strong small, .platform-limit-form > p) {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.platform-shell .platform-stat strong {
+  font-size: var(--type-metric);
+  font-variant-numeric: tabular-nums;
+}
+
+.platform-shell :is(.platform-form label, .platform-reauth label) {
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.platform-shell .platform-info-grid p,
+.platform-shell .platform-tenant-list,
+.platform-shell .platform-team-member,
+.platform-shell .platform-audit-list,
+.platform-shell .platform-compact-list {
+  overflow-wrap: anywhere;
+}
+
+.platform-shell .platform-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.platform-shell .platform-tabs button {
+  min-height: 44px;
+}
+
+.platform-shell .platform-content :is(p, li, dd, dt, time, td, .platform-info-grid) {
+  font-size: var(--type-ui);
+  line-height: 1.5;
+}
+
+.platform-shell .platform-content :is(small, .platform-audit-list article small,
+  .platform-audit-list time, .platform-row-main small, .platform-footnote,
+  .platform-tenant-meta small, .platform-info-grid p small,
+  .platform-detail-title p, .platform-footer, .platform-period) {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.platform-shell .platform-content .platform-stat-top {
+  font-size: var(--type-ui);
+}
+
+.platform-shell .platform-content .platform-info-grid p {
+  font-size: var(--type-body);
+}
+
+.platform-shell .platform-content :is(.platform-row-main b,
+  .platform-audit-list article b, .platform-tenant-list article b,
+  .platform-empty-inline, .platform-team-member > details > summary) {
+  font-size: var(--type-ui);
+}
+
+/* Clinic workspace */
+.layout .sidebar nav :is(a, button) {
+  font-size: var(--type-ui);
+}
+
+.layout .sidebar nav :is(a, button) span {
+  font-size: 16px;
+}
+
+.layout .workspace > header,
+.layout .workspace > header :is(select, .tenant, button),
+.layout .content :is(button, input, select, textarea) {
+  font-size: var(--type-ui);
+}
+
+.layout .content {
+  color: var(--text-primary);
+  line-height: var(--line-reading);
+}
+
+.layout .content :is(p, li, dd, dt, td, th) {
+  font-size: var(--type-ui);
+  line-height: 1.5;
+}
+
+.layout .content :is(label, summary) {
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.layout .content small {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.layout .content :is(.record-list, .conversation-row, .patient-row, .task-card,
+  .calendar-page, .appointment-summary, .detail-section, .module-grid,
+  .inbox-patient-summary, .profile-summary, .consent-events, .related-list,
+  .reports-panel, .reports-card, .reports-cards-compact, .reports-surveys,
+  .clinic-metric-card, .clinic-dashboard-metrics, .phase10-table-wrap) {
+  font-size: var(--type-ui);
+}
+
+.layout .content :is(.record-list, .conversation-row, .patient-row, .task-card,
+  .clinic-dashboard-appointment, .clinic-attention-row, .inbox-patient-summary,
+  .profile-summary, .consent-events, .related-list, .calendar-event) :is(span, b, time, dt, dd) {
+  font-size: var(--type-ui);
+}
+
+.layout .content :is(.clinic-page-header h1, .clinic-dashboard-heading h2, .reports-heading h2) {
+  font-size: var(--type-display);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.layout .content :is(.clinic-page-header p, .notice, .clinic-dashboard-heading p,
+  .clinic-dashboard-card-heading p, .reports-heading p, .reports-panel-title p,
+  .reports-alert, .reports-notice, .reports-empty, .reports-nps-summary,
+  .calendar-error, .platform-success) {
+  font-size: var(--type-meta);
+  line-height: var(--line-reading);
+  text-wrap: pretty;
+}
+
+.layout .content :is(.inbox-list-filters label,
+  .inbox-task-form label, .patient-form legend, .patient-form fieldset label,
+  .patient-filters, .patient-pagination, .reports-filters label,
+  .reports-nps-config form > label, .reports-surveys form label,
+  .reports-procedures legend, .reports-procedures label,
+  .phase10-filters label, .phase10-privacy-item > label) {
+  font-size: var(--type-ui);
+  line-height: 1.4;
+}
+
+.layout .content :is(.clinic-dashboard-card-heading h2, .reports-panel-title h2,
+  .phase10-card h2, .phase10-card h3, .detail-section h2,
+  .panel h2, .patient-profile h2, .module-grid h2) {
+  font-size: var(--type-card-title);
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.layout .content :is(.clinic-metric strong, .reports-card b, .reports-nps-trend b) {
+  font-variant-numeric: tabular-nums;
+}
+
+.layout .content :is(.calendar-navigation button, .calendar-filters button,
+  .appointment-actions button, .detail-section button, .appointment-form button,
+  .inbox-toolbar button, .patient-filters button, .patient-pagination button,
+  .profile-heading > button, .task-context-links button, .related-list article button,
+  .phase10-steps button, .phase10-settings-links button) {
+  min-height: 40px;
+  font-size: var(--type-ui);
+}
+
+.layout .content :is(.calendar-filters label, .calendar-resource-filter label,
+  .module-form label, .patient-form label, .inbox-task-form label,
+  .phase10-filters label, .phase10-privacy-item > label) {
+  font-size: var(--type-ui);
+}
+
+.layout .content :is(.patient-row, .conversation-row, .task-card,
+  .appointment-card, .activity, .related-list, .phase10-steps,
+  .reports-panel table) {
+  font-size: var(--type-meta);
+}
+
+.layout .content :is(.patient-count, .patient-note small, .source-status,
+  .reports-card small, .reports-breakdown small, .reports-warning,
+  .reports-trend span, .reports-trend small, .reports-surveys span,
+  .reports-surveys small, .reports-nps-trend span, .reports-nps-trend small,
+  .phase10-steps small, .phase10-privacy-item small, .phase10-history) {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.layout .content :is(.module-form input, .module-form textarea, .module-form select,
+  .uno-form > input, .uno-form select, .patient-filters input,
+  .patient-filters select, .calendar-resource-filter select,
+  .inbox-list-filters input, .inbox-list-filters select,
+  .inbox-task-form input, .inbox-task-form textarea,
+  .reports-filters input, .reports-filters select,
+  .reports-nps-config input, .reports-nps-config select,
+  .reports-surveys input, .reports-surveys select) {
+  min-height: 44px;
+  font-size: var(--type-ui);
+}
+
+.layout .content :is(.patient-row, .conversation-row, .task-card,
+  .inbox-patient-summary, .reports-panel, .phase10-card) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.layout .content :is(.reports-table-wrap, .reports-panel) {
+  max-width: 100%;
+}
+
+.layout .content .reports-panel {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 740px) {
+  .layout .sidebar nav :is(a, button) {
+    min-height: 44px;
+    font-size: var(--type-ui);
+  }
+
+  .layout .content :is(.clinic-page-header h1, .clinic-dashboard-heading h2, .reports-heading h2) {
+    font-size: 25px;
+  }
+
+  .platform-shell .platform-stats-primary,
+  .platform-shell .platform-stats-secondary,
+  .platform-shell .platform-stats-operations,
+  .platform-shell .platform-stats-usage,
+  .platform-shell .platform-stats-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Keep date controls inside the campaign grid on narrow phones. */
+.layout .content .campaign-form :is(input, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.layout .content .module-grid :is(input, select, textarea) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .module-grid > :is(section, form) > * {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .module-grid fieldset {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .automation-workspace label {
+  display: grid;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.layout .content .automation-workspace :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .automation-workspace > :is(section, form, .record-list) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .module-form.stacked > label:has(input:not([type="checkbox"]), select, textarea) {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.layout .content .module-form.stacked > label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.layout .content .module-form.stacked > label :is(input:not([type="checkbox"]), select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.layout .content .channels-intro > label select,
+.layout .content .task-toolbar select {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.layout .content .module-form button:not(.primary):not(.small-action) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: 600 var(--type-ui) var(--font-sans);
+  cursor: pointer;
+}
+
+.layout .content .record-list button:not(.primary):not(.small-action) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: 600 var(--type-ui) var(--font-sans);
+  cursor: pointer;
+}
+
+.layout .content .module-form input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 3px 4px 0 0;
+}
+
+/* Prevent broad form-control rules from stretching checkboxes across modules. */
+.layout .content input[type="checkbox"],
+.platform-shell .platform-form fieldset input[type="checkbox"] {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  flex: 0 0 18px;
+  accent-color: var(--brand-teal, #087f73);
+}
+
+.layout .content .module-grid .form-row,
+.layout .content .module-grid .form-row > label {
+  min-width: 0;
+}
+
+@media (max-width: 800px) {
+  .layout .content .inbox-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .layout .content .calendar-grid.one-day {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 740px) {
+  .login-card .brand {
+    justify-content: flex-start;
+    margin-inline: 0;
+  }
+
+  .login-card .brand > span {
+    display: block;
+  }
+
+  .layout .content .module-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout .content .module-grid > :is(section, form),
+  .layout .content .module-grid .form-row {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: calc(100vw - 56px);
+    min-width: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .platform-shell .platform-stats-primary,
+  .platform-shell .platform-stats-secondary,
+  .platform-shell .platform-stats-operations,
+  .platform-shell .platform-stats-usage,
+  .platform-shell .platform-stats-detail {
+    grid-template-columns: 1fr;
+  }
+}

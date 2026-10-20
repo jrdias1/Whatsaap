@@ -1,0 +1,1 @@
+ALTER TABLE "Campaign" ADD COLUMN "audiencePatientIds" UUID[] NOT NULL DEFAULT ARRAY[]::UUID[];

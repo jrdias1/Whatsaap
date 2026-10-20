@@ -1,0 +1,1691 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum UserRole {
+  PLATFORM_SUPERADMIN
+  TENANT_ADMIN
+  UNIT_MANAGER
+  OPERATOR
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum ConsentChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+}
+
+enum ConsentPurpose {
+  MARKETING
+  POST_CARE
+  APPOINTMENT_REMINDER
+  SATISFACTION_SURVEY
+  PROCEDURE_RETURN
+}
+
+enum ReferralQualificationCriterion {
+  LEAD_REGISTERED
+  FIRST_NATIVE_APPOINTMENT_COMPLETED
+}
+
+enum ReferralCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum ReferralStatus {
+  CLICKED
+  LEAD_REGISTERED
+  PATIENT_LINKED
+  QUALIFIED
+  CONVERTED
+  PENDING_VERIFICATION
+  REJECTED
+  CANCELLED
+  REVERSED
+}
+
+enum ReferralRewardType {
+  VOUCHER
+  SESSION_CREDIT
+  DISCOUNT
+  SERVICE
+}
+
+enum ReferralRewardStatus {
+  PENDING_APPROVAL
+  APPROVED
+  ISSUED
+  PARTIALLY_USED
+  USED
+  EXPIRED
+  CANCELLED
+  REJECTED
+}
+
+enum SatisfactionClassification {
+  EXCELLENT
+  GOOD
+  REGULAR
+  POOR
+  VERY_POOR
+}
+
+enum SatisfactionSurveyState {
+  PENDING
+  OUTBOXED
+  RESPONDED
+  EXPIRED
+  SUPPRESSED
+  FAILED
+}
+
+enum ConsentStatus {
+  GRANTED
+  DENIED
+  REVOKED
+}
+
+enum ConsentSource {
+  MANUAL
+  IMPORT
+  WHATSAPP_INBOUND
+  API
+}
+
+enum ConsentEvidenceType {
+  SIGNED_DOCUMENT
+  WRITTEN_FORM
+  WHATSAPP_MESSAGE
+  EMAIL_MESSAGE
+  OTHER
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum AppointmentSource {
+  NATIVE
+  UNO
+  MANUAL_IMPORT
+}
+
+enum UnitResourceType {
+  PROFESSIONAL
+  ROOM
+  EQUIPMENT
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+enum MessagingProvider {
+  META_CLOUD
+  EVOLUTION_BAILEYS
+  EVOLUTION_CLOUD
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING_HUMAN
+  CLOSED
+}
+
+enum ConversationAssignmentAction {
+  CLAIMED
+  ASSIGNED
+  TRANSFERRED
+  RELEASED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageActor {
+  HUMAN
+  AI
+  SYSTEM
+  PATIENT
+}
+
+enum MessageOrigin {
+  HUMAN
+  AI_DRAFT_HUMAN_APPROVED
+  SYSTEM
+}
+
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SIMULATED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SUPPRESSED
+}
+
+enum CampaignStatus {
+  DRAFT
+  APPROVED
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum AutomationStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  RETRY
+  UNKNOWN
+  SIMULATED
+  SENT
+  FAILED
+  SUPPRESSED
+}
+
+enum OutboxAttemptOutcome {
+  ACCEPTED
+  RETRYABLE_FAILURE
+  PERMANENT_FAILURE
+  UNKNOWN
+  SUPPRESSED
+}
+
+enum AiDraftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AuthSession {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @db.Uuid
+  userId       String     @db.Uuid
+  membershipId String     @db.Uuid
+  tokenHash    String     @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model UserInvitation {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  email       String
+  displayName String
+  role        UserRole
+  unitIds     String[]  @default([])
+  tokenHash   String    @unique
+  invitedById String    @db.Uuid
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy   User      @relation("InvitationActor", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, email, acceptedAt])
+  @@index([expiresAt])
+}
+
+model PasswordRecoveryToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @db.Uuid
+  userId      String    @db.Uuid
+  tokenHash   String    @unique
+  createdById String    @db.Uuid
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User      @relation("RecoveryTarget", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("RecoveryIssuer", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, userId, usedAt, expiresAt])
+}
+
+enum PrivacyRequestStatus {
+  OPEN
+  UNDER_REVIEW
+  COMPLETED
+  REJECTED
+}
+
+enum PrivacyRequestType {
+  ACCESS
+  CORRECTION
+  EXPORT
+  CONSENT_REVIEW
+  ERASURE
+  ANONYMIZATION
+  DATA_USE_QUESTION
+}
+
+model PrivacyRequest {
+  id            String                @id @default(uuid()) @db.Uuid
+  tenantId      String                @db.Uuid
+  patientId     String                @db.Uuid
+  type          PrivacyRequestType
+  reason        String
+  status        PrivacyRequestStatus  @default(OPEN)
+  closureReason String?
+  createdById   String                @db.Uuid
+  assignedToId  String?               @db.Uuid
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient       Patient               @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  createdBy     User                  @relation("PrivacyRequestCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedTo    User?                 @relation("PrivacyRequestAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  events        PrivacyRequestEvent[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, patientId, createdAt])
+}
+
+model PrivacyRequestEvent {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @db.Uuid
+  privacyRequestId String         @db.Uuid
+  actorUserId      String         @db.Uuid
+  action           String
+  details          Json           @default("{}")
+  occurredAt       DateTime       @default(now())
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  request          PrivacyRequest @relation(fields: [tenantId, privacyRequestId], references: [tenantId, id], onDelete: Restrict)
+
+  @@index([tenantId, privacyRequestId, occurredAt])
+}
+
+model Tenant {
+  id                       String                    @id @default(uuid()) @db.Uuid
+  name                     String
+  displayName              String?
+  legalName                String?
+  contactEmail             String?
+  contactPhone             String?
+  address                  String?
+  accentColor              String?
+  secondaryColor           String?
+  institutionalText        String?
+  slug                     String                    @unique
+  status                   TenantStatus              @default(TRIAL)
+  timezone                 String                    @default("America/Sao_Paulo")
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  provisioningKey          String?                   @unique
+  units                    Unit[]
+  memberships              Membership[]
+  subscription             Subscription?
+  auditEvents              AuditEvent[]
+  sessions                 AuthSession[]
+  invitations              UserInvitation[]
+  patients                 Patient[]
+  procedures               Procedure[]
+  appointments             Appointment[]
+  unoConnections           UnoConnection[]
+  conversations            Conversation[]
+  messages                 Message[]
+  campaigns                Campaign[]
+  automations              Automation[]
+  automationExecutions     AutomationExecution[]
+  satisfactionSurveys      SatisfactionSurvey[]
+  satisfactionSurveyEvents SatisfactionSurveyEvent[]
+  outbox                   OutboxMessage[]
+  unoEvents                UnoEvent[]
+  consents                 ConsentPreference[]
+  consentEvents            ConsentEvent[]
+  conversationStages       ConversationStage[]
+  stageCampaignEnrollments StageCampaignEnrollment[]
+  conversationAssignments  ConversationAssignment[]
+  tasks                    Task[]
+  taskHistory              TaskHistory[]
+  aiSettings               AiSettings?
+  aiDrafts                 AiDraft[]
+  patientTags              PatientTagDefinition[]
+  patientNotes             PatientNote[]
+  patientDocuments         PatientDocument[]
+  quickReplies             QuickReply[]
+  metaConnections          MetaConnection[]
+  evolutionConnections     EvolutionConnection[]
+  evolutionWebhookEvents   EvolutionWebhookEvent[]
+  metaWebhookEvents        MetaWebhookEvent[]
+  outboxAttempts           OutboxAttempt[]
+  dryRunProviderReceipts   DryRunProviderReceipt[]
+  referralCampaigns        ReferralCampaign[]
+  referralParticipants     ReferralParticipant[]
+  referrals                Referral[]
+  referralEvents           ReferralEvent[]
+  referralRewards          ReferralReward[]
+  referralRewardUses       ReferralRewardUse[]
+  resources                UnitResource[]
+  npsSettings              NpsSettings?
+  npsSurveys               NpsSurvey[]
+  passwordRecoveryTokens   PasswordRecoveryToken[]
+  privacyRequests          PrivacyRequest[]
+  privacyRequestEvents     PrivacyRequestEvent[]
+}
+
+model Unit {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  tenantId             String                  @db.Uuid
+  name                 String
+  slug                 String
+  contactEmail         String?
+  contactPhone         String?
+  address              String?
+  active               Boolean                 @default(true)
+  scheduleEnabled      Boolean                 @default(false)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships          UnitMembership[]
+  patients             Patient[]
+  procedures           Procedure[]
+  appointments         Appointment[]
+  unoConnections       UnoConnection[]
+  conversations        Conversation[]
+  tasks                Task[]
+  metaConnections      MetaConnection[]
+  evolutionConnections EvolutionConnection[]
+  automationExecutions AutomationExecution[]
+  satisfactionSurveys  SatisfactionSurvey[]
+  npsSurveys           NpsSurvey[]
+  referralCampaigns    ReferralCampaignUnit[]
+  referralParticipants ReferralParticipant[]
+  referrals            Referral[]
+  referralRewards      ReferralReward[]
+  referralRewardUses   ReferralRewardUse[]
+  resources            UnitResource[]
+  workingIntervals     UnitWorkingInterval[]
+  scheduleExceptions   UnitScheduleException[]
+  scheduleBlocks       UnitScheduleBlock[]
+
+  @@unique([tenantId, slug])
+  @@unique([tenantId, id])
+  @@index([tenantId, active])
+}
+
+model User {
+  id                           String                   @id @default(uuid()) @db.Uuid
+  email                        String                   @unique
+  passwordHash                 String
+  displayName                  String
+  mustChangePassword           Boolean                  @default(false)
+  active                       Boolean                  @default(true)
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+  platformAdminIdentity        PlatformAdminIdentity?
+  memberships                  Membership[]
+  auditEvents                  AuditEvent[]             @relation("AuditActor")
+  sessions                     AuthSession[]
+  sentInvitations              UserInvitation[]         @relation("InvitationActor")
+  recoveryTokens               PasswordRecoveryToken[]  @relation("RecoveryIssuer")
+  passwordRecoveryTokens       PasswordRecoveryToken[]  @relation("RecoveryTarget")
+  createdPrivacyRequests       PrivacyRequest[]         @relation("PrivacyRequestCreator")
+  assignedPrivacyRequests      PrivacyRequest[]         @relation("PrivacyRequestAssignee")
+  consentChanges               ConsentEvent[]           @relation("ConsentActor")
+  patientNotes                 PatientNote[]            @relation("PatientNoteAuthor")
+  uploadedPatientDocuments     PatientDocument[]        @relation("PatientDocumentUploader")
+  assignedConversations        Conversation[]           @relation("ConversationAssignee")
+  conversationAssignmentEvents ConversationAssignment[] @relation("ConversationAssignmentActor")
+  assignedTasks                Task[]                   @relation("TaskAssignee")
+  createdTasks                 Task[]                   @relation("TaskCreator")
+  taskHistoryEvents            TaskHistory[]            @relation("TaskHistoryActor")
+  createdQuickReplies          QuickReply[]             @relation("QuickReplyCreator")
+  updatedQuickReplies          QuickReply[]             @relation("QuickReplyUpdater")
+  createdAutomations           Automation[]             @relation("AutomationCreator")
+  createdReferralCampaigns     ReferralCampaign[]       @relation("ReferralCampaignCreator")
+  approvedReferralRewards      ReferralReward[]         @relation("ReferralRewardApprover")
+  issuedReferralRewards        ReferralReward[]         @relation("ReferralRewardIssuer")
+}
+
+// An explicit global identity is required in addition to the membership role.
+// Ordinary tenant administrators cannot create or modify this record.
+model PlatformAdminIdentity {
+  userId              String   @id @db.Uuid
+  totpSecretEncrypted String
+  lastTotpStep        BigInt   @default(0)
+  createdAt           DateTime @default(now())
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Membership {
+  id         String           @id @default(uuid()) @db.Uuid
+  tenantId   String           @db.Uuid
+  userId     String           @db.Uuid
+  role       UserRole
+  status     MembershipStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now())
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unitScopes UnitMembership[]
+  sessions   AuthSession[]
+
+  @@unique([tenantId, userId])
+  @@unique([tenantId, id])
+  @@index([userId, status])
+}
+
+model UnitMembership {
+  tenantId     String     @db.Uuid
+  membershipId String     @db.Uuid
+  unitId       String     @db.Uuid
+  membership   Membership @relation(fields: [tenantId, membershipId], references: [tenantId, id], onDelete: Cascade)
+  unit         Unit       @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([membershipId, unitId])
+  @@index([tenantId, membershipId])
+  @@index([unitId])
+}
+
+model Patient {
+  id                     String                @id @default(uuid()) @db.Uuid
+  tenantId               String                @db.Uuid
+  unitId                 String?               @db.Uuid
+  fullName               String
+  phone                  String?
+  phoneNormalized        String?
+  email                  String?
+  birthDate              DateTime?
+  source                 String?
+  active                 Boolean               @default(true)
+  deletedAt              DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  tenant                 Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                   Unit?                 @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  consents               ConsentPreference[]
+  consentEvents          ConsentEvent[]
+  appointments           Appointment[]
+  automationExecutions   AutomationExecution[]
+  satisfactionSurveys    SatisfactionSurvey[]
+  npsSurveys             NpsSurvey[]
+  privacyRequests        PrivacyRequest[]
+  conversations          Conversation[]
+  tasks                  Task[]
+  outbox                 OutboxMessage[]
+  tags                   PatientTag[]
+  notes                  PatientNote[]
+  documents              PatientDocument[]
+  referralParticipations ReferralParticipant[]
+  referralsMade          Referral[]            @relation("ReferralIndicator")
+  referredRecords        Referral[]            @relation("ReferralPatient")
+
+  @@unique([tenantId, id])
+  @@index([tenantId, fullName])
+  @@index([tenantId, phoneNormalized])
+  @@index([tenantId, unitId, active])
+}
+
+model PatientTagDefinition {
+  id        String       @id @default(uuid()) @db.Uuid
+  tenantId  String       @db.Uuid
+  name      String
+  color     String       @default("#64748b")
+  createdAt DateTime     @default(now())
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patients  PatientTag[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, name])
+}
+
+model PatientTag {
+  tenantId  String               @db.Uuid
+  patientId String               @db.Uuid
+  tagId     String               @db.Uuid
+  createdAt DateTime             @default(now())
+  patient   Patient              @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  tag       PatientTagDefinition @relation(fields: [tenantId, tagId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, patientId, tagId])
+  @@index([tenantId, tagId])
+}
+
+model PatientNote {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @db.Uuid
+  patientId    String   @db.Uuid
+  authorUserId String   @db.Uuid
+  content      String
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient      Patient  @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  author       User     @relation("PatientNoteAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, patientId, createdAt])
+}
+
+model PatientDocument {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @db.Uuid
+  patientId        String   @db.Uuid
+  uploadedByUserId String?  @db.Uuid
+  originalName     String   @db.VarChar(180)
+  mimeType         String   @db.VarChar(80)
+  size             Int
+  storageKey       String   @unique @db.VarChar(80)
+  createdAt        DateTime @default(now())
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient          Patient  @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  uploadedBy       User?    @relation("PatientDocumentUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, patientId, createdAt])
+}
+
+model QuickReply {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(240)
+  shortcut    String?  @db.VarChar(40)
+  category    String   @db.VarChar(60)
+  body        String   @db.VarChar(4000)
+  active      Boolean  @default(true)
+  createdById String   @db.Uuid
+  updatedById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User     @relation("QuickReplyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User     @relation("QuickReplyUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, shortcut])
+  @@index([tenantId, active, category, name])
+}
+
+model MetaConnection {
+  id                   String             @id @default(uuid()) @db.Uuid
+  tenantId             String             @db.Uuid
+  unitId               String             @db.Uuid
+  displayName          String             @default("Meta Cloud")
+  wabaId               String
+  phoneNumberId        String             @unique
+  graphApiVersion      String             @default("UNCONFIRMED")
+  accessTokenEncrypted String
+  status               IntegrationStatus  @default(DISCONNECTED)
+  enabled              Boolean            @default(true)
+  isDefault            Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                 Unit               @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  events               MetaWebhookEvent[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+}
+
+model EvolutionConnection {
+  id                String                  @id @default(uuid()) @db.Uuid
+  tenantId          String                  @db.Uuid
+  unitId            String                  @db.Uuid
+  displayName       String
+  apiBaseUrl        String
+  instanceName      String
+  mode              MessagingProvider       @default(EVOLUTION_BAILEYS)
+  apiVersion        String                  @default("UNCONFIRMED")
+  apiKeyEncrypted   String
+  webhookSecretHash String                  @unique
+  phoneNumber       String?
+  status            IntegrationStatus       @default(DISCONNECTED)
+  enabled           Boolean                 @default(true)
+  isDefault         Boolean                 @default(false)
+  lastCheckedAt     DateTime?
+  lastError         String?                 @db.VarChar(500)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  tenant            Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit              Unit                    @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  events            EvolutionWebhookEvent[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, unitId, status])
+}
+
+model EvolutionWebhookEvent {
+  id                String              @id @default(uuid()) @db.Uuid
+  tenantId          String              @db.Uuid
+  connectionId      String              @db.Uuid
+  eventKey          String
+  eventType         String
+  payload           Json
+  status            String              @default("PENDING")
+  attempts          Int                 @default(0)
+  enqueuedAt        DateTime?
+  nextAttemptAt     DateTime            @default(now())
+  receivedAt        DateTime            @default(now())
+  processedAt       DateTime?
+  lastError         String?             @db.VarChar(500)
+  providerMessageId String?
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection        EvolutionConnection @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, connectionId, eventKey])
+  @@index([status, enqueuedAt, nextAttemptAt, receivedAt])
+}
+
+model MetaWebhookEvent {
+  id                String         @id @default(uuid()) @db.Uuid
+  tenantId          String         @db.Uuid
+  connectionId      String         @db.Uuid
+  eventKey          String
+  eventType         String
+  payload           Json
+  status            String         @default("PENDING")
+  attempts          Int            @default(0)
+  enqueuedAt        DateTime?
+  nextAttemptAt     DateTime       @default(now())
+  receivedAt        DateTime       @default(now())
+  processedAt       DateTime?
+  lastError         String?        @db.VarChar(500)
+  providerMessageId String?
+  providerTimestamp BigInt?
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection        MetaConnection @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, connectionId, eventKey])
+  @@index([status, nextAttemptAt, receivedAt])
+  @@index([status, enqueuedAt, nextAttemptAt, receivedAt], map: "MetaWebhookEvent_enqueue_recovery_idx")
+  @@index([tenantId, connectionId, providerMessageId, providerTimestamp])
+}
+
+model ConsentPreference {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @db.Uuid
+  patientId         String               @db.Uuid
+  channel           ConsentChannel
+  purpose           ConsentPurpose
+  status            ConsentStatus
+  source            ConsentSource
+  evidence          String?
+  evidenceType      ConsentEvidenceType?
+  evidenceReference String?
+  policyVersion     String?
+  lastChangedAt     DateTime             @default(now())
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient           Patient              @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, patientId, channel, purpose])
+  @@index([tenantId, channel, purpose, status])
+}
+
+model ConsentEvent {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @db.Uuid
+  patientId         String               @db.Uuid
+  actorUserId       String?              @db.Uuid
+  channel           ConsentChannel
+  purpose           ConsentPurpose
+  status            ConsentStatus
+  source            ConsentSource
+  evidence          String?
+  evidenceType      ConsentEvidenceType?
+  evidenceReference String?
+  policyVersion     String?
+  occurredAt        DateTime             @default(now())
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient           Patient              @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  actor             User?                @relation("ConsentActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, patientId, occurredAt])
+}
+
+model Procedure {
+  id                         String                         @id @default(uuid()) @db.Uuid
+  tenantId                   String                         @db.Uuid
+  unitId                     String?                        @db.Uuid
+  name                       String
+  appointmentDurationMinutes Int
+  returnAfterDays            Int?
+  reminderAdvanceDays        Int?
+  active                     Boolean                        @default(true)
+  createdAt                  DateTime                       @default(now())
+  updatedAt                  DateTime                       @updatedAt
+  tenant                     Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                       Unit?                          @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  appointments               Appointment[]
+  satisfactionSurveys        SatisfactionSurvey[]
+  tasks                      Task[]
+  resourceRequirements       ProcedureResourceRequirement[]
+
+  @@unique([tenantId, name])
+  @@unique([tenantId, id])
+  @@index([tenantId, unitId, active])
+}
+
+model Appointment {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @db.Uuid
+  unitId               String                @db.Uuid
+  patientId            String                @db.Uuid
+  procedureId          String?               @db.Uuid
+  startsAt             DateTime
+  endsAt               DateTime
+  status               AppointmentStatus     @default(PENDING)
+  completedAt          DateTime?
+  source               AppointmentSource     @default(NATIVE)
+  externalId           String?
+  notes                String?
+  createdById          String?               @db.Uuid
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                 Unit                  @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  patient              Patient               @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  procedure            Procedure?            @relation(fields: [tenantId, procedureId], references: [tenantId, id], onDelete: Restrict)
+  automationExecutions AutomationExecution[]
+  satisfactionSurveys  SatisfactionSurvey[]
+  tasks                Task[]
+  referralConversions  Referral[]
+  resources            AppointmentResource[]
+  npsSurveys           NpsSurvey[]
+
+  @@unique([tenantId, unitId, id])
+  @@unique([tenantId, unitId, source, externalId])
+  @@index([tenantId, unitId, startsAt, endsAt])
+  @@index([tenantId, patientId, startsAt])
+}
+
+model UnitResource {
+  id             String                @id @default(uuid()) @db.Uuid
+  tenantId       String                @db.Uuid
+  unitId         String                @db.Uuid
+  type           UnitResourceType
+  name           String                @db.VarChar(120)
+  active         Boolean               @default(true)
+  startIntervalMinutes Int?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit           Unit                  @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  appointments   AppointmentResource[]
+  scheduleBlocks UnitScheduleBlock[]
+
+  @@unique([tenantId, unitId, id])
+  @@index([tenantId, unitId, type, active, name])
+}
+
+model AppointmentResource {
+  tenantId      String       @db.Uuid
+  unitId        String       @db.Uuid
+  appointmentId String       @db.Uuid
+  resourceId    String       @db.Uuid
+  appointment   Appointment  @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Cascade)
+  resource      UnitResource @relation(fields: [tenantId, unitId, resourceId], references: [tenantId, unitId, id], onDelete: Restrict)
+
+  @@id([tenantId, unitId, appointmentId, resourceId])
+  @@index([tenantId, unitId, resourceId])
+}
+
+model ProcedureResourceRequirement {
+  tenantId     String           @db.Uuid
+  procedureId  String           @db.Uuid
+  resourceType UnitResourceType
+  quantity     Int              @default(1)
+  procedure    Procedure        @relation(fields: [tenantId, procedureId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, procedureId, resourceType])
+}
+
+model UnitWorkingInterval {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  unitId      String   @db.Uuid
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  unit        Unit     @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, unitId, id])
+  @@index([tenantId, unitId, weekday, startMinute])
+}
+
+model UnitScheduleException {
+  id        String                          @id @default(uuid()) @db.Uuid
+  tenantId  String                          @db.Uuid
+  unitId    String                          @db.Uuid
+  date      DateTime                        @db.Date
+  closed    Boolean                         @default(false)
+  label     String?                         @db.VarChar(160)
+  createdAt DateTime                        @default(now())
+  updatedAt DateTime                        @updatedAt
+  unit      Unit                            @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  intervals UnitScheduleExceptionInterval[]
+
+  @@unique([tenantId, unitId, id])
+  @@unique([tenantId, unitId, date])
+}
+
+model UnitScheduleExceptionInterval {
+  id          String                @id @default(uuid()) @db.Uuid
+  tenantId    String                @db.Uuid
+  unitId      String                @db.Uuid
+  exceptionId String                @db.Uuid
+  startMinute Int
+  endMinute   Int
+  exception   UnitScheduleException @relation(fields: [tenantId, unitId, exceptionId], references: [tenantId, unitId, id], onDelete: Cascade)
+
+  @@index([tenantId, unitId, exceptionId, startMinute])
+}
+
+model UnitScheduleBlock {
+  id         String        @id @default(uuid()) @db.Uuid
+  tenantId   String        @db.Uuid
+  unitId     String        @db.Uuid
+  resourceId String?       @db.Uuid
+  startsAt   DateTime
+  endsAt     DateTime
+  label      String?       @db.VarChar(160)
+  createdAt  DateTime      @default(now())
+  unit       Unit          @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  resource   UnitResource? @relation(fields: [tenantId, unitId, resourceId], references: [tenantId, unitId, id], onDelete: Restrict)
+
+  @@unique([tenantId, unitId, id])
+  @@index([tenantId, unitId, startsAt, endsAt])
+  @@index([tenantId, unitId, resourceId, startsAt, endsAt])
+}
+
+model UnoConnection {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @db.Uuid
+  unitId               String            @db.Uuid
+  status               IntegrationStatus @default(DISCONNECTED)
+  accessTokenEncrypted String?
+  secretKeyEncrypted   String?
+  webhookTokenHash     String            @unique
+  selectedCategories   String[]          @default([])
+  selectedFields       String[]          @default([])
+  sourceOfTruth        String            @default("NATIVE")
+  writeEnabled         Boolean           @default(false)
+  lastCheckedAt        DateTime?
+  lastEventAt          DateTime?
+  lastError            String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                 Unit              @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  events               UnoEvent[]
+
+  @@unique([tenantId, unitId])
+  @@unique([tenantId, id])
+}
+
+model UnoEvent {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     String        @db.Uuid
+  connectionId String        @db.Uuid
+  eventKey     String
+  eventType    String
+  externalId   String?
+  payload      Json
+  receivedAt   DateTime      @default(now())
+  processedAt  DateTime?
+  error        String?
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection   UnoConnection @relation(fields: [tenantId, connectionId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, connectionId, eventKey])
+  @@index([tenantId, connectionId, processedAt])
+}
+
+model Conversation {
+  id                       String                    @id @default(uuid()) @db.Uuid
+  tenantId                 String                    @db.Uuid
+  unitId                   String                    @db.Uuid
+  patientId                String                    @db.Uuid
+  status                   ConversationStatus        @default(OPEN)
+  assignedToId             String?                   @db.Uuid
+  pipelineStageId          String?                   @db.Uuid
+  lastMessageAt            DateTime                  @default(now())
+  humanResponseDueAt       DateTime?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit                     Unit                      @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  patient                  Patient                   @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  assignedTo               User?                     @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  pipelineStage            ConversationStage?        @relation(fields: [tenantId, pipelineStageId], references: [tenantId, id], onDelete: Restrict)
+  messages                 Message[]
+  aiDrafts                 AiDraft[]
+  assignmentEvents         ConversationAssignment[]
+  tasks                    Task[]
+  stageCampaignEnrollments StageCampaignEnrollment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, unitId, id])
+  @@index([tenantId, unitId, status, lastMessageAt])
+}
+
+model ConversationStage {
+  id             String                    @id @default(uuid()) @db.Uuid
+  tenantId       String                    @db.Uuid
+  name           String
+  position       Int
+  active         Boolean                   @default(true)
+  campaignId     String?                   @db.Uuid
+  inactivityDays Int?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  tenant         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations  Conversation[]
+  campaign       Campaign?                 @relation("StageCampaign", fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Restrict)
+  enrollments    StageCampaignEnrollment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, active, position])
+}
+
+model StageCampaignEnrollment {
+  id              String            @id @default(uuid()) @db.Uuid
+  tenantId        String            @db.Uuid
+  conversationId  String            @db.Uuid
+  stageId         String            @db.Uuid
+  campaignId      String            @db.Uuid
+  body            String            @db.VarChar(4000)
+  inactivityDays  Int
+  status          String            @default("PENDING") @db.VarChar(24)
+  dueAt           DateTime
+  outboxMessageId String?           @db.Uuid
+  reason          String?           @db.VarChar(500)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation    Conversation      @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  stage           ConversationStage @relation(fields: [tenantId, stageId], references: [tenantId, id], onDelete: Restrict)
+  campaign        Campaign          @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, outboxMessageId])
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, conversationId, status])
+}
+
+model ConversationAssignment {
+  id             String                       @id @default(uuid()) @db.Uuid
+  tenantId       String                       @db.Uuid
+  conversationId String                       @db.Uuid
+  actorUserId    String                       @db.Uuid
+  fromUserId     String?                      @db.Uuid
+  toUserId       String?                      @db.Uuid
+  action         ConversationAssignmentAction
+  occurredAt     DateTime                     @default(now())
+  conversation   Conversation                 @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+  actor          User                         @relation("ConversationAssignmentActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  tenant         Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversationId, occurredAt])
+}
+
+model Task {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenantId       String        @db.Uuid
+  unitId         String        @db.Uuid
+  patientId      String?       @db.Uuid
+  conversationId String?       @db.Uuid
+  appointmentId  String?       @db.Uuid
+  procedureId    String?       @db.Uuid
+  automationId   String?       @db.Uuid
+  title          String
+  description    String?
+  assignedToId   String        @db.Uuid
+  createdById    String        @db.Uuid
+  priority       TaskPriority  @default(NORMAL)
+  dueAt          DateTime?
+  status         TaskStatus    @default(TODO)
+  completedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit           Unit          @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  patient        Patient?      @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  conversation   Conversation? @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Restrict)
+  appointment    Appointment?  @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Restrict)
+  procedure      Procedure?    @relation(fields: [tenantId, procedureId], references: [tenantId, id], onDelete: Restrict)
+  automation     Automation?   @relation(fields: [tenantId, automationId], references: [tenantId, id], onDelete: Restrict)
+  assignee       User          @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: Restrict)
+  creator        User          @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  history        TaskHistory[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, unitId, status, dueAt])
+  @@index([tenantId, assignedToId, status, dueAt])
+  @@index([tenantId, procedureId, status])
+}
+
+model TaskHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  taskId      String   @db.Uuid
+  actorUserId String   @db.Uuid
+  action      String
+  before      Json?
+  after       Json?
+  occurredAt  DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  task        Task     @relation(fields: [tenantId, taskId], references: [tenantId, id], onDelete: Cascade)
+  actor       User     @relation("TaskHistoryActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, taskId, occurredAt])
+}
+
+model Message {
+  id                String           @id @default(uuid()) @db.Uuid
+  tenantId          String           @db.Uuid
+  conversationId    String           @db.Uuid
+  direction         MessageDirection
+  actor             MessageActor
+  origin            MessageOrigin    @default(HUMAN)
+  approvedById      String?          @db.Uuid
+  status            MessageStatus    @default(QUEUED)
+  body              String
+  provider          String?
+  providerMessageId String?
+  idempotencyKey    String?
+  sentAt            DateTime?
+  createdAt         DateTime         @default(now())
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation      Conversation     @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, provider, providerMessageId])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, conversationId, createdAt])
+}
+
+model AiSettings {
+  id                               String   @id @default(uuid()) @db.Uuid
+  tenantId                         String   @unique @db.Uuid
+  enabled                          Boolean  @default(false)
+  conversationProcessingAuthorized Boolean  @default(false)
+  apiKeyEncrypted                  String?
+  model                            String   @default("gpt-4o-mini")
+  instructions                     String   @default("") @db.VarChar(4000)
+  updatedAt                        DateTime @updatedAt
+  tenant                           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AiDraft {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenantId       String        @db.Uuid
+  conversationId String        @db.Uuid
+  requestedById  String        @db.Uuid
+  status         AiDraftStatus @default(PENDING)
+  body           String        @db.VarChar(4000)
+  model          String
+  createdAt      DateTime      @default(now())
+  reviewedAt     DateTime?
+  reviewedById   String?       @db.Uuid
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation   Conversation  @relation(fields: [tenantId, conversationId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, conversationId, status, createdAt])
+}
+
+model Campaign {
+  id               String                    @id @default(uuid()) @db.Uuid
+  tenantId         String                    @db.Uuid
+  name             String
+  status           CampaignStatus            @default(DRAFT)
+  mode             String                    @default("BULK") @db.VarChar(24)
+  channel          ConsentChannel            @default(WHATSAPP)
+  provider         String                    @default("META_CLOUD")
+  body             String
+  audiencePatientIds String[]                  @default([]) @db.Uuid
+  scheduledAt      DateTime?
+  createdById      String?                   @db.Uuid
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outbox           OutboxMessage[]
+  stages           ConversationStage[]       @relation("StageCampaign")
+  stageEnrollments StageCampaignEnrollment[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, scheduledAt])
+}
+
+model ReferralCampaign {
+  id                        String                         @id @default(uuid()) @db.Uuid
+  tenantId                  String                         @db.Uuid
+  name                      String                         @db.VarChar(120)
+  description               String?                        @db.VarChar(1000)
+  status                    ReferralCampaignStatus         @default(DRAFT)
+  startsAt                  DateTime
+  endsAt                    DateTime?
+  qualificationCriterion    ReferralQualificationCriterion
+  rewardEveryQualifiedCount Int                            @default(1)
+  rewardType                ReferralRewardType
+  rewardQuantity            Int                            @default(1)
+  rewardDescription         String                         @db.VarChar(500)
+  rewardValidityDays        Int                            @default(90)
+  maxRewardsPerParticipant  Int                            @default(1)
+  requireHumanApproval      Boolean                        @default(true)
+  createdById               String?                        @db.Uuid
+  createdAt                 DateTime                       @default(now())
+  updatedAt                 DateTime                       @updatedAt
+  tenant                    Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy                 User?                          @relation("ReferralCampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  units                     ReferralCampaignUnit[]
+  participants              ReferralParticipant[]
+  referrals                 Referral[]
+  rewards                   ReferralReward[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, startsAt, endsAt])
+}
+
+model ReferralCampaignUnit {
+  tenantId   String           @db.Uuid
+  campaignId String           @db.Uuid
+  unitId     String           @db.Uuid
+  campaign   ReferralCampaign @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  unit       Unit             @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+
+  @@id([tenantId, campaignId, unitId])
+  @@index([tenantId, unitId])
+}
+
+model ReferralParticipant {
+  id             String           @id @default(uuid()) @db.Uuid
+  tenantId       String           @db.Uuid
+  campaignId     String           @db.Uuid
+  patientId      String           @db.Uuid
+  unitId         String           @db.Uuid
+  shareTokenHash String           @unique
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign       ReferralCampaign @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  patient        Patient          @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  unit           Unit             @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  referrals      Referral[]
+  rewards        ReferralReward[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, campaignId, patientId])
+  @@unique([tenantId, campaignId, id])
+  @@index([tenantId, campaignId, unitId])
+}
+
+model Referral {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  tenantId              String                 @db.Uuid
+  campaignId            String                 @db.Uuid
+  participantId         String                 @db.Uuid
+  indicatorPatientId    String                 @db.Uuid
+  unitId                String                 @db.Uuid
+  patientId             String?                @db.Uuid
+  appointmentId         String?                @db.Uuid
+  clickKey              String                 @db.VarChar(100)
+  claimTokenHash        String                 @unique
+  leadPhoneNormalized   String?
+  status                ReferralStatus         @default(CLICKED)
+  firstClickAt          DateTime               @default(now())
+  leadRegisteredAt      DateTime?
+  patientLinkedAt       DateTime?
+  qualifiedAt           DateTime?
+  convertedAt           DateTime?
+  qualificationEvidence String?                @db.VarChar(500)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign              ReferralCampaign       @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  participant           ReferralParticipant    @relation(fields: [tenantId, campaignId, participantId], references: [tenantId, campaignId, id], onDelete: Cascade)
+  indicatorPatient      Patient                @relation("ReferralIndicator", fields: [tenantId, indicatorPatientId], references: [tenantId, id], onDelete: Restrict)
+  patient               Patient?               @relation("ReferralPatient", fields: [tenantId, patientId], references: [tenantId, id], onDelete: Restrict)
+  unit                  Unit                   @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  appointment           Appointment?           @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Restrict)
+  events                ReferralEvent[]
+  rewardSources         ReferralRewardSource[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, clickKey])
+  @@unique([tenantId, leadPhoneNormalized])
+  @@index([tenantId, campaignId, participantId, status])
+  @@index([tenantId, patientId, status])
+}
+
+model ReferralEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  referralId String   @db.Uuid
+  actorId    String?  @db.Uuid
+  event      String   @db.VarChar(50)
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  referral   Referral @relation(fields: [tenantId, referralId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, referralId, createdAt])
+}
+
+model ReferralReward {
+  id              String                 @id @default(uuid()) @db.Uuid
+  tenantId        String                 @db.Uuid
+  campaignId      String                 @db.Uuid
+  participantId   String                 @db.Uuid
+  unitId          String                 @db.Uuid
+  milestoneNumber Int
+  type            ReferralRewardType
+  description     String                 @db.VarChar(500)
+  authorizedQty   Int
+  usedQty         Int                    @default(0)
+  status          ReferralRewardStatus   @default(PENDING_APPROVAL)
+  approvedById    String?                @db.Uuid
+  issuedById      String?                @db.Uuid
+  approvedAt      DateTime?
+  issuedAt        DateTime?
+  expiresAt       DateTime?
+  voucherHash     String?                @unique
+  voucherLast4    String?                @db.VarChar(4)
+  decisionReason  String?                @db.VarChar(500)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign        ReferralCampaign       @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  participant     ReferralParticipant    @relation(fields: [tenantId, campaignId, participantId], references: [tenantId, campaignId, id], onDelete: Cascade)
+  unit            Unit                   @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+  approver        User?                  @relation("ReferralRewardApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  issuer          User?                  @relation("ReferralRewardIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  sources         ReferralRewardSource[]
+  uses            ReferralRewardUse[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, campaignId, participantId, milestoneNumber])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, participantId, status])
+}
+
+model ReferralRewardSource {
+  tenantId   String         @db.Uuid
+  rewardId   String         @db.Uuid
+  referralId String         @db.Uuid
+  reward     ReferralReward @relation(fields: [tenantId, rewardId], references: [tenantId, id], onDelete: Cascade)
+  referral   Referral       @relation(fields: [tenantId, referralId], references: [tenantId, id], onDelete: Restrict)
+
+  @@id([tenantId, rewardId, referralId])
+  @@index([tenantId, referralId])
+}
+
+model ReferralRewardUse {
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @db.Uuid
+  rewardId       String         @db.Uuid
+  unitId         String         @db.Uuid
+  idempotencyKey String         @db.VarChar(100)
+  quantity       Int
+  actorUserId    String         @db.Uuid
+  createdAt      DateTime       @default(now())
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reward         ReferralReward @relation(fields: [tenantId, rewardId], references: [tenantId, id], onDelete: Restrict)
+  unit           Unit           @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, rewardId, createdAt])
+}
+
+model Automation {
+  id                  String                @id @default(uuid()) @db.Uuid
+  tenantId            String                @db.Uuid
+  name                String
+  trigger             String
+  status              AutomationStatus      @default(DRAFT)
+  configuration       Json
+  createdById         String?               @db.Uuid
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy           User?                 @relation("AutomationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  executions          AutomationExecution[]
+  satisfactionSurveys SatisfactionSurvey[]
+  tasks               Task[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+}
+
+model AutomationExecution {
+  id                 String              @id @default(uuid()) @db.Uuid
+  tenantId           String              @db.Uuid
+  unitId             String              @db.Uuid
+  automationId       String              @db.Uuid
+  appointmentId      String              @db.Uuid
+  patientId          String              @db.Uuid
+  idempotencyKey     String
+  stepKey            String?             @db.VarChar(80)
+  status             String              @default("PENDING") @db.VarChar(24)
+  scheduledAt        DateTime
+  responseDeadlineAt DateTime?
+  executedAt         DateTime?
+  outboxMessageId    String?             @db.Uuid
+  responseAction     String?             @db.VarChar(32)
+  attempts           Int                 @default(0)
+  lastError          String?             @db.VarChar(500)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit               Unit                @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  automation         Automation          @relation(fields: [tenantId, automationId], references: [tenantId, id], onDelete: Cascade)
+  appointment        Appointment         @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Cascade)
+  patient            Patient             @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  satisfactionSurvey SatisfactionSurvey?
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@index([status, scheduledAt, id])
+  @@index([tenantId, unitId, appointmentId, status])
+  @@index([tenantId, automationId, scheduledAt])
+}
+
+model SatisfactionSurvey {
+  id                String                      @id @default(uuid()) @db.Uuid
+  tenantId          String                      @db.Uuid
+  unitId            String                      @db.Uuid
+  automationId      String                      @db.Uuid
+  executionId       String                      @unique @db.Uuid
+  appointmentId     String                      @db.Uuid
+  patientId         String                      @db.Uuid
+  procedureId       String?                     @db.Uuid
+  channel           ConsentChannel              @default(WHATSAPP)
+  provider          String
+  question          String                      @db.VarChar(1000)
+  version           Int                         @default(1)
+  state             SatisfactionSurveyState     @default(PENDING)
+  classification    SatisfactionClassification?
+  responseSource    String?                     @db.VarChar(40)
+  responseMessageId String?                     @db.VarChar(200)
+  respondedAt       DateTime?
+  expiresAt         DateTime
+  outboxMessageId   String?                     @db.Uuid
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  tenant            Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit              Unit                        @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  automation        Automation                  @relation(fields: [tenantId, automationId], references: [tenantId, id], onDelete: Cascade)
+  execution         AutomationExecution         @relation(fields: [tenantId, executionId], references: [tenantId, id], onDelete: Cascade)
+  appointment       Appointment                 @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Cascade)
+  patient           Patient                     @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  procedure         Procedure?                  @relation(fields: [tenantId, procedureId], references: [tenantId, id], onDelete: Restrict)
+  events            SatisfactionSurveyEvent[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, executionId])
+  @@unique([tenantId, automationId, appointmentId])
+  @@index([tenantId, unitId, state, expiresAt])
+  @@index([tenantId, patientId, state, expiresAt])
+}
+
+model SatisfactionSurveyEvent {
+  id         String             @id @default(uuid()) @db.Uuid
+  tenantId   String             @db.Uuid
+  surveyId   String             @db.Uuid
+  event      String             @db.VarChar(40)
+  metadata   Json?
+  occurredAt DateTime           @default(now())
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  survey     SatisfactionSurvey @relation(fields: [tenantId, surveyId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, surveyId, occurredAt])
+}
+
+model NpsSettings {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String   @unique @db.Uuid
+  enabled              Boolean  @default(false)
+  unitId               String?  @db.Uuid
+  eligibleProcedureIds Json?
+  delayHours           Int      @default(24)
+  question             String   @default("De 0 a 10, o quanto voce recomendaria nossa clinica?") @db.VarChar(1000)
+  allowComment         Boolean  @default(true)
+  repeatAfterDays      Int      @default(0)
+  windowStartMinute    Int      @default(480)
+  windowEndMinute      Int      @default(1200)
+  createFollowupBelow  Int?
+  followupDueHours     Int      @default(24)
+  responsibleUserId    String?  @db.Uuid
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, enabled, unitId])
+}
+
+model NpsSurvey {
+  id                String      @id @default(uuid()) @db.Uuid
+  tenantId          String      @db.Uuid
+  unitId            String      @db.Uuid
+  appointmentId     String      @db.Uuid
+  patientId         String      @db.Uuid
+  scheduledAt       DateTime
+  status            String      @default("PLANNED") @db.VarChar(24)
+  question          String      @db.VarChar(1000)
+  allowComment      Boolean     @default(true)
+  score             Int?
+  comment           String?     @db.VarChar(2000)
+  responseSource    String?     @db.VarChar(40)
+  respondedByUserId String?     @db.Uuid
+  respondedAt       DateTime?
+  followupTaskId    String?     @unique @db.Uuid
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit              Unit        @relation(fields: [tenantId, unitId], references: [tenantId, id], onDelete: Cascade)
+  appointment       Appointment @relation(fields: [tenantId, unitId, appointmentId], references: [tenantId, unitId, id], onDelete: Cascade)
+  patient           Patient     @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, appointmentId])
+  @@index([tenantId, unitId, scheduledAt, status])
+  @@index([tenantId, patientId, respondedAt])
+}
+
+model OutboxMessage {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String          @db.Uuid
+  patientId         String          @db.Uuid
+  campaignId        String?         @db.Uuid
+  purpose           ConsentPurpose
+  channel           ConsentChannel
+  provider          String
+  connectionId      String?         @db.Uuid
+  body              String
+  idempotencyKey    String
+  status            OutboxStatus    @default(PENDING)
+  suppressionReason String?
+  attempts          Int             @default(0)
+  enqueuedAt        DateTime?
+  leaseExpiresAt    DateTime?
+  nextAttemptAt     DateTime        @default(now())
+  lastError         String?         @db.VarChar(500)
+  scheduledAt       DateTime        @default(now())
+  sentAt            DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @default(now()) @updatedAt
+  tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient           Patient         @relation(fields: [tenantId, patientId], references: [tenantId, id], onDelete: Cascade)
+  campaign          Campaign?       @relation(fields: [tenantId, campaignId], references: [tenantId, id], onDelete: Cascade)
+  attemptsLog       OutboxAttempt[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, id])
+  @@index([tenantId, status, scheduledAt])
+  @@index([status, nextAttemptAt, scheduledAt])
+}
+
+model OutboxAttempt {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @db.Uuid
+  outboxMessageId   String               @db.Uuid
+  attemptNumber     Int
+  outcome           OutboxAttemptOutcome
+  cause             String               @db.VarChar(120)
+  detail            String?              @db.VarChar(500)
+  nextAction        String               @db.VarChar(120)
+  providerReference String?
+  queueLatencyMs    Int?
+  processingMs      Int?
+  createdAt         DateTime             @default(now())
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outboxMessage     OutboxMessage        @relation(fields: [tenantId, outboxMessageId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, outboxMessageId, attemptNumber])
+  @@index([tenantId, outcome, createdAt])
+}
+
+// Provider-side receipt for the local simulator only; no external API is called.
+model DryRunProviderReceipt {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @db.Uuid
+  idempotencyKey    String
+  outboxMessageId   String   @db.Uuid
+  providerReference String   @unique
+  acceptedAt        DateTime @default(now())
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, outboxMessageId])
+}
+
+model Plan {
+  id                    String         @id @default(uuid()) @db.Uuid
+  code                  String         @unique
+  name                  String
+  priceCents            Int
+  patientLimit          Int?
+  messageLimitPerCycle  Int
+  userLimit             Int
+  unitLimit             Int
+  connectionLimit       Int
+  activeAutomationLimit Int
+  campaignLimitPerCycle Int
+  enabled               Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  subscriptions         Subscription[]
+}
+
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  tenantId       String             @unique @db.Uuid
+  planId         String             @db.Uuid
+  status         SubscriptionStatus @default(TRIAL)
+  cycleStartsAt  DateTime
+  cycleEndsAt    DateTime
+  limitOverrides Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan           Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  usageEntries   UsageEntry[]
+
+  @@index([status, cycleEndsAt])
+}
+
+model UsageEntry {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @db.Uuid
+  tenantId       String       @db.Uuid
+  metric         String
+  quantity       Int          @default(1)
+  idempotencyKey String
+  cycleStartsAt  DateTime
+  cycleEndsAt    DateTime
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, metric, idempotencyKey])
+  @@index([tenantId, metric, cycleStartsAt, cycleEndsAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @db.Uuid
+  actorUserId String?  @db.Uuid
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json     @default("{}")
+  occurredAt  DateTime @default(now())
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@index([entityType, entityId])
+}

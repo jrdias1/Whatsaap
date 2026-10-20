@@ -1,0 +1,2 @@
+ALTER TABLE "Task" ADD COLUMN "automationId" UUID;
+ALTER TABLE "Task" ADD CONSTRAINT "Task_tenantId_automationId_fkey" FOREIGN KEY ("tenantId", "automationId") REFERENCES "Automation"("tenantId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;

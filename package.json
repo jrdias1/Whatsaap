@@ -1,0 +1,21 @@
+{
+  "name": "planejamento-sistema-clinica",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"npm run start:dev --workspace api\" \"npm run dev --workspace web\"",
+    "build": "npm run build --workspace api && npm run build --workspace web",
+    "lint": "npm run lint --workspace api && npm run lint --workspace web",
+    "test:browser": "npm run build --workspace api && playwright test",
+    "db:generate": "npm run db:generate --workspace api",
+    "db:migrate": "npm run db:migrate --workspace api"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^9.2.1"
+  }
+}
