@@ -485,3 +485,18 @@
 }
 .automation-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.automation-workspace [hidden],.referrals-workspace [hidden]{display:none!important}.referrals-workspace{display:grid;gap:14px;min-width:0}.referral-tabs{margin-bottom:0}.automation-workspace .record-list[hidden]{display:none!important}
 @media(max-width:560px){.automation-tabs button{flex:1 1 auto;min-height:42px}.resource-schedule-tabs button{flex:1 1 auto}}
+
+/* Automation rule builder: make schedule concepts explicit and easy to scan. */
+.layout .content .automation-scope-note { margin: 0; padding: 12px 14px; border: 1px solid var(--border, #d8e3e7); border-radius: 10px; background: var(--surface-subtle, #f1f7f7); color: var(--text-muted, #4f6875); line-height: 1.5; }
+.layout .content .automation-delay-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 12px; align-items: end; }
+.layout .content .automation-delay-row > small { grid-column: 1 / -1; }
+.layout .content .automation-contact-window { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 0; padding: 14px; border: 1px solid var(--border, #d8e3e7); border-radius: 10px; }
+.layout .content .automation-contact-window legend { padding: 0 5px; font-weight: 650; }
+.layout .content .automation-contact-window > small { grid-column: 1 / -1; }
+.layout .content .automation-advanced { padding-top: 4px; }
+.layout .content .automation-advanced > summary { cursor: pointer; color: var(--text-muted, #4f6875); font-weight: 650; }
+.layout .content .automation-sequence { gap: 12px; }
+@media (max-width: 700px) {
+  .layout .content .automation-delay-row, .layout .content .automation-contact-window { grid-template-columns: minmax(0, 1fr); }
+  .layout .content .automation-delay-row > small, .layout .content .automation-contact-window > small { grid-column: auto; }
+}
