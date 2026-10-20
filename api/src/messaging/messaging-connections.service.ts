@@ -1,5 +1,5 @@
-import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantContext } from '../security/tenant-context.js';
 import { encryptSecret } from '../security/secret-crypto.js';
@@ -26,12 +26,168 @@ export class MessagingConnectionsService {
     const where = { tenantId: scope.tenantId, ...(unitId ? { unitId } : {}) };
     const [meta, evolution] = await Promise.all([
       this.prisma.scoped.metaConnection.findMany({ where, select: { id: true, unitId: true, displayName: true, wabaId: true, phoneNumberId: true, graphApiVersion: true, status: true, enabled: true, updatedAt: true } }),
-      this.prisma.scoped.evolutionConnection.findMany({ where, select: { id: true, unitId: true, displayName: true, apiBaseUrl: true, instanceName: true, mode: true, apiVersion: true, phoneNumber: true, status: true, enabled: true, isDefault: true, lastCheckedAt: true, lastError: true, updatedAt: true } }),
+      this.prisma.scoped.evolutionConnection.findMany({ where, select: { id: true, unitId: true, displayName: true, instanceName: true, mode: true, apiVersion: true, phoneNumber: true, status: true, enabled: true, isDefault: true, lastCheckedAt: true, lastError: true, updatedAt: true } }),
     ]);
     return [
       ...meta.map((row) => ({ ...row, provider: 'META_CLOUD', credentialsConfigured: true, webhookUrl: this.metaWebhookUrl(), homologation: 'PENDING_EXTERNAL_CREDENTIALS' })),
       ...evolution.map((row) => ({ ...row, provider: row.mode, credentialsConfigured: true, webhookUrl: this.evolutionWebhookUrl(row.id), homologation: 'PENDING_VERSION_CONFIRMATION', warning: row.mode === 'EVOLUTION_BAILEYS' ? 'WhatsApp Web/Baileys não é integração oficial da Meta e tem risco adicional de desconexão e restrição.' : null })),
     ];
+  }
+
+  /** Creates or reuses the tenant's one Evolution connection for this unit and returns a real QR. */
+  async connectEvolution(unitIdInput: unknown) {
+    const scope = this.scope();
+    const unitId = this.string(unitIdInput, 'unitId', 80);
+    await this.assertUnit(scope.tenantId, unitId);
+    const apiBaseUrl = this.evolutionApiUrl();
+    const apiKey = this.evolutionApiKey();
+    const unit = await this.prisma.scoped.unit.findFirst({ where: { tenantId: scope.tenantId, id: unitId, active: true }, select: { id: true, name: true } });
+    if (!unit) throw new NotFoundException('Unidade não encontrada.');
+
+    let connection = await this.prisma.scoped.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' }, orderBy: { createdAt: 'asc' } });
+    if (!connection) {
+      connection = await this.prisma.unscoped.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${scope.tenantId}:evolution-unit:${unitId}`}, 0))`;
+        const existing = await tx.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' } });
+        if (existing) return existing;
+        await this.usage.assertCapacityWithinTransaction(tx, 'connections', scope.tenantId);
+        const instanceName = `ec_${scope.tenantId.replaceAll('-', '').slice(0, 12)}_${unitId.replaceAll('-', '').slice(0, 12)}`;
+        const id = randomUUID();
+        const webhookSecret = this.webhookSecret(id);
+        return tx.evolutionConnection.create({ data: {
+          id, tenantId: scope.tenantId, unitId, displayName: `WhatsApp · ${unit.name}`,
+          apiBaseUrl, instanceName, mode: 'EVOLUTION_BAILEYS', apiVersion: process.env.EVOLUTION_API_VERSION?.trim() || 'UNCONFIRMED',
+          apiKeyEncrypted: encryptSecret(apiKey), webhookSecretHash: createHash('sha256').update(webhookSecret).digest('hex'),
+          status: 'DISCONNECTED', enabled: true, isDefault: true,
+        } });
+      });
+      await this.audit(scope.tenantId, scope.userId, 'EVOLUTION_CONNECTION_CREATED', 'EvolutionConnection', connection.id, { unitId, provider: 'EVOLUTION_BAILEYS' });
+    }
+    const webhookSecret = this.webhookSecret(connection.id);
+    await this.prisma.scoped.evolutionConnection.updateMany({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS', id: { not: connection.id } }, data: { isDefault: false } });
+    connection = await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: {
+      apiBaseUrl, apiKeyEncrypted: encryptSecret(apiKey),
+      webhookSecretHash: createHash('sha256').update(webhookSecret).digest('hex'), enabled: true, isDefault: true,
+    } });
+
+    try {
+      await this.ensureEvolutionInstance(apiBaseUrl, connection.instanceName, apiKey);
+      const webhookUrl = this.evolutionWebhookUrl(connection.id);
+      if (!webhookUrl) throw new Error('API_PUBLIC_URL não configurada.');
+      await this.evolutionRequest(apiBaseUrl, apiKey, `/webhook/set/${encodeURIComponent(connection.instanceName)}`, {
+        method: 'POST', body: { webhook: { url: webhookUrl, enabled: true, webhookByEvents: false, events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'], headers: { 'x-evolution-webhook-secret': webhookSecret } } },
+      });
+      const state = await this.evolutionRequest(apiBaseUrl, apiKey, `/instance/connectionState/${encodeURIComponent(connection.instanceName)}`);
+      if (this.isConnected(state)) {
+        await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'CONNECTED', enabled: true, lastCheckedAt: new Date(), lastError: null } });
+        return { id: connection.id, unitId, status: 'CONNECTED', qr: null, alreadyConnected: true };
+      }
+      const qr = await this.getEvolutionQr(apiBaseUrl, apiKey, connection.instanceName);
+      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'DISCONNECTED', enabled: true, lastCheckedAt: new Date(), lastError: null } });
+      await this.audit(scope.tenantId, scope.userId, 'EVOLUTION_QR_GENERATED', 'EvolutionConnection', connection.id, { unitId });
+      return { id: connection.id, unitId, status: 'CONNECTING', qr, alreadyConnected: false };
+    } catch (error) {
+      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'ERROR', lastCheckedAt: new Date(), lastError: error instanceof Error ? error.message.slice(0, 500) : 'Falha ao conectar à Evolution API.' } }).catch(() => undefined);
+      if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ForbiddenException) throw error;
+      throw new BadGatewayException('Não foi possível conectar ao WhatsApp agora. Verifique a Evolution API e tente novamente.');
+    }
+  }
+
+  async evolutionStatus(id: string) {
+    const scope = this.scope();
+    const connection = await this.prisma.scoped.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, id, mode: 'EVOLUTION_BAILEYS' } });
+    if (!connection) throw new NotFoundException('Conexão não encontrada.');
+    try {
+      const state = await this.evolutionRequest(connection.apiBaseUrl, decryptSecret(connection.apiKeyEncrypted), `/instance/connectionState/${encodeURIComponent(connection.instanceName)}`);
+      const rawState = this.connectionState(state);
+      const status = rawState === 'open' ? 'CONNECTED' : rawState === 'connecting' || rawState === 'qr' ? 'CONNECTING' : 'DISCONNECTED';
+      await this.prisma.scoped.evolutionConnection.update({ where: { id }, data: { status: status === 'CONNECTED' ? 'CONNECTED' : 'DISCONNECTED', enabled: true, lastCheckedAt: new Date(), lastError: null } });
+      return { id, unitId: connection.unitId, status };
+    } catch {
+      throw new BadGatewayException('Não foi possível consultar o estado do WhatsApp.');
+    }
+  }
+
+  async disconnectEvolution(id: string) {
+    const scope = this.scope();
+    const connection = await this.prisma.scoped.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, id, mode: 'EVOLUTION_BAILEYS' } });
+    if (!connection) throw new NotFoundException('Conexão não encontrada.');
+    try { await this.evolutionRequest(connection.apiBaseUrl, decryptSecret(connection.apiKeyEncrypted), `/instance/logout/${encodeURIComponent(connection.instanceName)}`, { method: 'DELETE' }); }
+    catch { throw new BadGatewayException('Não foi possível desconectar o WhatsApp. Tente novamente.'); }
+    await this.prisma.scoped.evolutionConnection.update({ where: { id }, data: { status: 'DISCONNECTED', enabled: true, lastCheckedAt: new Date(), lastError: null } });
+    await this.audit(scope.tenantId, scope.userId, 'EVOLUTION_CONNECTION_DISCONNECTED', 'EvolutionConnection', id, { unitId: connection.unitId });
+    return { id, status: 'DISCONNECTED' };
+  }
+
+  private evolutionApiUrl() {
+    const raw = process.env.EVOLUTION_API_URL?.trim();
+    if (!raw) throw new ServiceUnavailableException('A conexão com WhatsApp ainda não está disponível. A Evolution API não foi configurada no servidor.');
+    let url: URL;
+    try { url = new URL(raw); } catch { throw new ServiceUnavailableException('A URL da Evolution API no servidor é inválida.'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new ServiceUnavailableException('A URL da Evolution API no servidor é inválida.');
+    return url.toString().replace(/\/$/, '');
+  }
+  private evolutionApiKey() {
+    const key = process.env.EVOLUTION_GLOBAL_KEY || process.env.EVOLUTION_API_KEY;
+    if (!key?.trim()) throw new ServiceUnavailableException('A conexão com WhatsApp ainda não está disponível. A chave da Evolution API não foi configurada no servidor.');
+    return key.trim();
+  }
+  private webhookSecret(id: string) {
+    const key = process.env.INTEGRATION_ENCRYPTION_KEY;
+    if (!key || !/^[a-f\d]{64}$/i.test(key)) throw new ServiceUnavailableException('A chave de integrações do servidor não está configurada corretamente.');
+    return createHmac('sha256', Buffer.from(key, 'hex')).update(`essencial-evolution-webhook:${id}`).digest('base64url');
+  }
+  private async ensureEvolutionInstance(base: string, name: string, apiKey: string) {
+    const listInstances = async () => this.evolutionRequest(base, apiKey, '/instance/fetchInstances');
+    const containsInstance = (response: unknown) => {
+      const root = response && typeof response === 'object' ? response as Record<string, any> : {};
+      const instances = Array.isArray(response) ? response : Array.isArray(root.data) ? root.data : [];
+      return instances.some((instance: any) => instance?.name === name || instance?.instance === name || instance?.instance?.instanceName === name);
+    };
+    if (containsInstance(await listInstances())) return;
+    try {
+      await this.evolutionRequest(base, apiKey, '/instance/create', { method: 'POST', body: { instanceName: name, token: apiKey, qrcode: true, integration: 'WHATSAPP-BAILEYS' } });
+    } catch (error) {
+      // Concurrent requests or an instance created by an earlier interrupted attempt may return conflict.
+      if (!(error instanceof BadRequestException)) throw error;
+      if (!containsInstance(await listInstances())) throw error;
+    }
+  }
+  private async getEvolutionQr(base: string, apiKey: string, name: string): Promise<string> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await this.evolutionRequest(base, apiKey, `/instance/connect/${encodeURIComponent(name)}`);
+      const root = response && typeof response === 'object' ? response as Record<string, any> : {};
+      const nested = root.qrcode ?? root.qrCode ?? root.qr ?? root;
+      const raw = typeof nested === 'string' ? nested : nested?.base64 ?? nested?.code;
+      if (typeof raw === 'string' && raw.trim()) return raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    throw new BadGatewayException('A Evolution API não retornou um QR Code. Tente gerar novamente.');
+  }
+  private isConnected(response: unknown) {
+    return this.connectionState(response) === 'open';
+  }
+  private connectionState(response: unknown) {
+    if (!response || typeof response !== 'object') return '';
+    const root = response as Record<string, any>;
+    return String(root.state ?? root.instance?.state ?? root.data?.instance?.state ?? '').toLowerCase();
+  }
+  private async evolutionRequest(base: string, apiKey: string, path: string, options: { method?: string; body?: unknown } = {}): Promise<unknown> {
+    const target = new URL(path, `${base.replace(/\/$/, '')}/`);
+    if (target.origin !== new URL(base).origin) throw new BadGatewayException('Rota inválida da Evolution API.');
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(target, { method: options.method ?? 'GET', headers: { apikey: apiKey, accept: 'application/json', ...(options.body ? { 'content-type': 'application/json' } : {}) }, ...(options.body ? { body: JSON.stringify(options.body) } : {}), signal: controller.signal });
+      if (!response.ok) {
+        if (response.status === 404) throw new NotFoundException('Instância Evolution não encontrada.');
+        if (response.status === 409 || response.status === 401) throw new BadRequestException('Instância já existe ou a chave da Evolution API foi rejeitada.');
+        throw new BadGatewayException(`Evolution API respondeu com erro HTTP ${response.status}.`);
+      }
+      return await response.json().catch(() => ({}));
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException || error instanceof BadGatewayException) throw error;
+      throw new BadGatewayException('Evolution API indisponível ou sem resposta.');
+    } finally { clearTimeout(timer); }
   }
 
   async whatsappContacts(unitId: string) {
@@ -110,28 +266,6 @@ export class MessagingConnectionsService {
     return { id: row.id, provider: 'META_CLOUD', displayName, unitId, wabaId, phoneNumberId, graphApiVersion, status: row.status, credentialsConfigured: true, webhookUrl: this.metaWebhookUrl(), sendsEnabled: false };
   }
 
-  async createEvolution(input: Record<string, unknown>) {
-    const scope = this.scope();
-    const unitId = this.string(input.unitId, 'unitId', 80);
-    await this.assertUnit(scope.tenantId, unitId);
-    const displayName = this.string(input.displayName, 'displayName', 100);
-    const instanceName = this.string(input.instanceName, 'instanceName', 120);
-    const apiBaseUrl = this.baseUrl(input.apiBaseUrl);
-    const apiKey = this.string(input.apiKey, 'apiKey', 5000);
-    const mode = input.mode === 'EVOLUTION_CLOUD' ? 'EVOLUTION_CLOUD' : 'EVOLUTION_BAILEYS';
-    if (mode === 'EVOLUTION_CLOUD') throw new BadRequestException('EVOLUTION_CLOUD ficará disponível quando a versão instalada e o contrato Cloud forem confirmados.');
-    const rawWebhookSecret = randomBytes(32).toString('base64url');
-    const apiVersion = typeof input.apiVersion === 'string' ? input.apiVersion.trim().slice(0, 80) : '';
-    const phoneNumber = typeof input.phoneNumber === 'string' ? input.phoneNumber.replace(/\D/g, '').slice(0, 20) || null : null;
-    const isDefault = input.isDefault === true || !(await this.prisma.scoped.evolutionConnection.count({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS', isDefault: true, enabled: true } }));
-    if (isDefault) await this.prisma.scoped.evolutionConnection.updateMany({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' }, data: { isDefault: false } });
-    const row = await this.prisma.unscoped.$transaction(async (tx) => {
-      await this.usage.assertCapacityWithinTransaction(tx, 'connections');
-      return tx.evolutionConnection.create({ data: { tenantId: scope.tenantId, unitId, displayName, instanceName, apiBaseUrl, mode, apiVersion: apiVersion || 'UNCONFIRMED', phoneNumber, apiKeyEncrypted: encryptSecret(apiKey), webhookSecretHash: createHash('sha256').update(rawWebhookSecret).digest('hex'), status: 'DISCONNECTED', isDefault } });
-    });
-    await this.audit(scope.tenantId, scope.userId, 'MESSAGING_CONNECTION_CREATED', 'EvolutionConnection', row.id, { provider: mode, unitId, instanceName, apiBaseUrl, apiVersion: row.apiVersion });
-    return { id: row.id, provider: mode, unitId, displayName, apiBaseUrl, instanceName, apiVersion: row.apiVersion, phoneNumber, status: row.status, credentialsConfigured: true, webhookUrl: this.evolutionWebhookUrl(row.id), webhookSecret: rawWebhookSecret, webhookSecretShownOnce: true, sendsEnabled: false, warning: 'Baileys/WhatsApp Web não é canal oficial Meta.' };
-  }
 
   async dryRun(id: string) {
     const scope = this.scope();
@@ -161,14 +295,7 @@ export class MessagingConnectionsService {
     if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new BadRequestException(`${name} é obrigatório e deve ter até ${max} caracteres.`);
     return value.trim();
   }
-  private baseUrl(value: unknown) {
-    const raw = this.string(value, 'apiBaseUrl', 500);
-    let parsed: URL;
-    try { parsed = new URL(raw); } catch { throw new BadRequestException('URL da Evolution inválida.'); }
-    const local = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
-    if (!['https:', 'http:'].includes(parsed.protocol) || (parsed.protocol !== 'https:' && (process.env.NODE_ENV === 'production' || !local)) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new BadRequestException('Use URL HTTPS sem credenciais, query ou fragmento; HTTP só é permitido para loopback em ambiente local.');
-    return parsed.toString().replace(/\/$/, '');
-  }
+
   private async audit(tenantId: string, actorUserId: string, action: string, entityType: string, entityId: string, metadata: Record<string, unknown>) {
     await this.prisma.scoped.auditEvent.create({ data: { tenantId, actorUserId, action, entityType, entityId, metadata: metadata as object } });
   }

@@ -47,7 +47,7 @@ export class UsageService {
         patients: { current: patients, limit: limits.patientLimit },
         users: { current: activeUsers, pendingInvitations: pendingInvites, limit: limits.userLimit },
         units: { current: units, limit: limits.unitLimit },
-        whatsappConnections: { current: connections, limit: limits.connectionLimit, status: 'LOCAL_CONNECTION_CONFIGURATION_DRY_RUN' },
+        whatsappConnections: { current: connections, limit: limits.connectionLimit, status: 'SERVER_MANAGED_QR_CONNECTIONS' },
         activeAutomations: { current: automations, limit: limits.activeAutomationLimit },
         messages: { current: messages._sum.quantity ?? 0, limit: limits.messageLimitPerCycle },
         campaigns: { current: campaigns._sum.quantity ?? 0, limit: limits.campaignLimitPerCycle },

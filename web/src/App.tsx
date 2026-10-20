@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { FormEvent } from 'react'
 import './App.css'
 import './workspace.css'
+import './channel-connections.css'
 import './design-tokens.css'
 import './clinic-shell.css'
 import ClinicSidebar from './ClinicSidebar.js'
@@ -505,39 +506,85 @@ function QuickRepliesPanel({ request, conversationId, role, onInsert }: { reques
   return <section className="module-form stacked" aria-label="Respostas rápidas"><input aria-label="Buscar respostas rápidas" placeholder="Buscar por nome, atalho ou categoria" value={search} onChange={(event) => setSearch(event.target.value)}/><div className="inbox-toolbar">{items.map((item) => <button type="button" key={item.id} className={selectedId === item.id ? 'active' : ''} onClick={() => void select(item.id)}>{String(item.name)}</button>)}</div>{preview && <article><p>{preview.body}</p>{preview.unresolved.length > 0 && <small>Complete as variáveis: {preview.unresolved.join(', ')}</small>}<button type="button" disabled={!preview.canInsert} onClick={() => onInsert(preview.body)}>Inserir no rascunho</button></article>}{canManage && <><form className="module-form stacked" onSubmit={save}><strong>{selectedId ? 'Editar resposta rápida' : 'Nova resposta rápida'}</strong><input required maxLength={100} placeholder="Nome" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/><input maxLength={40} placeholder="Atalho opcional" value={form.shortcut} onChange={(event) => setForm({ ...form, shortcut: event.target.value })}/><input required maxLength={60} placeholder="Categoria" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}/><input maxLength={240} placeholder="Descrição opcional" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })}/><textarea required maxLength={4000} placeholder="Texto. Variáveis: {{paciente.primeiroNome}}, {{unidade.nome}}, {{atendente.nome}}, {{agendamento.data}}, {{agendamento.hora}}" value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })}/><div><button className="primary">Salvar resposta</button>{selectedId && <button type="button" onClick={() => { const item = items.find((entry) => entry.id === selectedId); if (item) void deactivate(item) }}>Arquivar</button>}</div></form>{items.find((item) => item.id === selectedId) && <button type="button" onClick={() => { const item = items.find((entry) => entry.id === selectedId)!; setForm({ name: String(item.name), description: String(item.description ?? ''), shortcut: String(item.shortcut ?? ''), category: String(item.category), body: String(item.body) }) }}>Carregar para edição</button>}</>}{error && <div className="notice">{error}</div>}</section>
 }
 
-function MessagingConnectionsPanel({ unitId, units, request, setNotice }: { unitId: string; units: Unit[]; request: (path: string, init?: RequestInit) => Promise<any>; setNotice: (message: string) => void }) {
+function MessagingConnectionsPanel({ units, request, setNotice }: { unitId: string; units: Unit[]; request: (path: string, init?: RequestInit) => Promise<any>; setNotice: (message: string) => void }) {
   const [items, setItems] = useState<Row[]>([])
-  const [provider, setProvider] = useState<'META_CLOUD' | 'EVOLUTION_BAILEYS'>('META_CLOUD')
-  const [meta, setMeta] = useState({ displayName: '', unitId, wabaId: '', phoneNumberId: '', graphApiVersion: '', accessToken: '', isDefault: false })
-  const [evolution, setEvolution] = useState({ displayName: '', unitId, apiBaseUrl: '', instanceName: '', apiVersion: '', phoneNumber: '', apiKey: '', isDefault: false })
-  const [result, setResult] = useState<any>(null)
+  const [tab, setTab] = useState<'evolution' | 'meta'>('evolution')
+  const [meta, setMeta] = useState({ displayName: '', unitId: units[0]?.id ?? '', wabaId: '', phoneNumberId: '', graphApiVersion: '', accessToken: '', isDefault: false })
+  const [usage, setUsage] = useState<any>(null)
+  const [qrSession, setQrSession] = useState<{ id: string; unitId: string; qr: string | null; status: string } | null>(null)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const path = unitId ? `/messaging/connections?unitId=${encodeURIComponent(unitId)}` : '/messaging/connections'
-  const refresh = useCallback(async () => { setItems(await request(path)) }, [path, request])
-  useEffect(() => { void refresh().catch((cause: Error) => setError(cause.message)) }, [refresh])
-  useEffect(() => { setMeta((current) => ({ ...current, unitId })); setEvolution((current) => ({ ...current, unitId })) }, [unitId])
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(''); setBusy(true)
-    try {
-      const saved = provider === 'META_CLOUD'
-        ? await request('/messaging/connections/meta', { method: 'POST', body: JSON.stringify(meta) })
-        : await request('/messaging/connections/evolution', { method: 'POST', body: JSON.stringify({ ...evolution, mode: 'EVOLUTION_BAILEYS' }) })
-      setResult(saved); setMeta((current) => ({ ...current, displayName: '', wabaId: '', phoneNumberId: '', graphApiVersion: '', accessToken: '', isDefault: false })); setEvolution((current) => ({ ...current, displayName: '', apiBaseUrl: '', instanceName: '', apiVersion: '', phoneNumber: '', apiKey: '', isDefault: false })); await refresh()
-      setNotice('Conexão salva com segredo protegido. Nenhuma chamada ao provedor foi feita.')
-    } catch (cause) { setError((cause as Error).message) } finally { setBusy(false) }
+  const [busyUnit, setBusyUnit] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [busyMeta, setBusyMeta] = useState(false)
+  const refresh = useCallback(async () => { setItems(await request('/messaging/connections')) }, [request])
+  useEffect(() => { let active = true; Promise.all([request('/messaging/connections'), request('/usage')]).then(([connections, plan]) => { if (active) { setItems(connections); setUsage(plan) } }).catch((cause: Error) => { if (active) setError(cause.message) }).finally(() => { if (active) setLoading(false) }); return () => { active = false } }, [request])
+  useEffect(() => { if (!meta.unitId && units[0]) setMeta((current) => ({ ...current, unitId: units[0].id })) }, [units, meta.unitId])
+  useEffect(() => {
+    if (!qrSession || qrSession.status === 'CONNECTED') return
+    let active = true
+    let timer = 0
+    const poll = async () => {
+      try {
+        const status = await request(`/messaging/connections/${qrSession.id}/status`)
+        if (!active) return
+        setQrSession((current) => current?.id === qrSession.id ? { ...current, status: status.status, qr: status.status === 'CONNECTED' ? null : current.qr } : current)
+        if (status.status === 'CONNECTED') { setNotice(`WhatsApp conectado \\u00e0 filial ${units.find((unit) => unit.id === qrSession.unitId)?.name ?? ''}.`); void refresh() }
+      } catch { /* Keep the QR visible and retry status checks. */ }
+      if (active) timer = window.setTimeout(() => void poll(), 3000)
+    }
+    void poll()
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [qrSession?.id, qrSession?.status, request, refresh, setNotice, units])
+  async function connect(unit: Unit) {
+    setError(''); setBusyUnit(unit.id)
+    try { const result = await request('/messaging/connections/evolution/connect', { method: 'POST', body: JSON.stringify({ unitId: unit.id }) }); setQrSession({ id: result.id, unitId: unit.id, qr: result.qr ?? null, status: result.status }); await refresh(); setUsage(await request('/usage')); if (result.alreadyConnected) setNotice(`O WhatsApp da filial ${unit.name} j\u00e1 est\u00e1 conectado.`) }
+    catch (cause) { setError((cause as Error).message || 'N\u00e3o foi poss\u00edvel gerar o QR Code.') }
+    finally { setBusyUnit('') }
   }
-  async function dryRun(id: string) { setError(''); try { setResult(await request(`/messaging/connections/${id}/dry-run`, { method: 'POST', body: '{}' })) } catch (cause) { setError((cause as Error).message) } }
-  async function disable(id: string) { setError(''); try { await request(`/messaging/connections/${id}/disconnect-local`, { method: 'POST', body: '{}' }); await refresh(); setNotice('Conexão desativada somente no SaaS; nenhuma operação remota foi feita.') } catch (cause) { setError((cause as Error).message) } }
-  const unitOptions = units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)
-  return <section className="channels-page"><div className="channels-intro"><h2>Conexões de WhatsApp</h2><p>Cadastre conexões por unidade. Chaves não são devolvidas ao navegador. O estado operacional, QR Code e chamadas externas dependem da homologação do contrato e da versão instalada. As verificações desta etapa são simuladas e não enviam mensagens.</p><label>Provedor<select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}><option value="META_CLOUD">Meta Cloud API oficial</option><option value="EVOLUTION_BAILEYS">Evolution API · Baileys (não oficial)</option></select></label></div>
-    <form className="module-form channel-form" onSubmit={save}><label>Nome da conexão<input required value={provider === 'META_CLOUD' ? meta.displayName : evolution.displayName} onChange={(event) => provider === 'META_CLOUD' ? setMeta({ ...meta, displayName: event.target.value }) : setEvolution({ ...evolution, displayName: event.target.value })}/></label><label>Unidade<select required value={provider === 'META_CLOUD' ? meta.unitId : evolution.unitId} onChange={(event) => provider === 'META_CLOUD' ? setMeta({ ...meta, unitId: event.target.value }) : setEvolution({ ...evolution, unitId: event.target.value })}>{unitOptions}</select></label>
-      {provider === 'META_CLOUD' ? <><label>WABA ID<input required value={meta.wabaId} onChange={(event) => setMeta({ ...meta, wabaId: event.target.value })}/></label><label>Phone Number ID<input required value={meta.phoneNumberId} onChange={(event) => setMeta({ ...meta, phoneNumberId: event.target.value })}/></label><label>Versão da Graph API<input placeholder="vXX.X · confirmar com Meta" value={meta.graphApiVersion} onChange={(event) => setMeta({ ...meta, graphApiVersion: event.target.value })}/></label><label>Token de acesso<input type="password" autoComplete="new-password" required value={meta.accessToken} onChange={(event) => setMeta({ ...meta, accessToken: event.target.value })}/></label></> : <><label>URL da Evolution API<input type="url" required placeholder="https://evolution.seudominio" value={evolution.apiBaseUrl} onChange={(event) => setEvolution({ ...evolution, apiBaseUrl: event.target.value })}/></label><label>Instância existente<input required value={evolution.instanceName} onChange={(event) => setEvolution({ ...evolution, instanceName: event.target.value })}/></label><label>Versão da Evolution<input placeholder="Não presumir 2.3.7" value={evolution.apiVersion} onChange={(event) => setEvolution({ ...evolution, apiVersion: event.target.value })}/></label><label>Número conectado (opcional)<input value={evolution.phoneNumber} onChange={(event) => setEvolution({ ...evolution, phoneNumber: event.target.value })}/></label><label>API Key<input type="password" autoComplete="new-password" required value={evolution.apiKey} onChange={(event) => setEvolution({ ...evolution, apiKey: event.target.value })}/></label><p role="note">Baileys usa WhatsApp Web e não é uma conexão oficial da Meta; pode desconectar ou sofrer restrições. Campanhas de marketing em massa são bloqueadas nesse modo.</p></>}
-      <label><input type="checkbox" checked={provider === 'META_CLOUD' ? meta.isDefault : evolution.isDefault} onChange={(event) => provider === 'META_CLOUD' ? setMeta({ ...meta, isDefault: event.target.checked }) : setEvolution({ ...evolution, isDefault: event.target.checked })}/> Usar como conexão padrão desta unidade</label>
-      <button className="primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar conexão'}</button></form>
-    {result?.webhookSecret && <article><b>Segredo de webhook da Evolution (exibido uma vez)</b><code>{String(result.webhookSecret)}</code><p>Configure a URL e o header `x-evolution-webhook-secret` na instância. Use TLS e restrição de rede/proxy na VPS após confirmar o contrato.</p></article>}
-    {result && <article><b>Resultado local</b><pre>{JSON.stringify(result, null, 2)}</pre></article>}
-    <div className="record-list">{items.map((item) => <article key={item.id}><b>{String(item.displayName)} · {statusLabel(item.provider)} · {statusLabel(item.status)}</b><span>Unidade: {units.find((u) => u.id === item.unitId)?.name ?? 'Unidade indisponível'} · homologação: {statusLabel(item.homologation)} · segredo configurado: {item.credentialsConfigured ? 'sim (oculto)' : 'não'}</span><span>{item.provider === 'META_CLOUD' ? `WABA ${String(item.wabaId)} · Phone Number ID ${String(item.phoneNumberId)} · versão da Graph API ${String(item.graphApiVersion)}` : `Instância ${String(item.instanceName)} · versão ${String(item.apiVersion)} · ${String(item.apiBaseUrl)}`}</span>{Boolean(item.warning) && <small>{String(item.warning)}</small>}<div><button type="button" onClick={() => void dryRun(item.id)}>Simular verificação local (sem chamada externa)</button><button type="button" onClick={() => void disable(item.id)}>Desativar localmente</button><button type="button" disabled title="Consulta de estado e QR exigem versão/API da VPS confirmadas e autorização de conexão">Status / QR indisponíveis até homologação</button></div></article>)}</div>{error && <div className="notice" role="alert">{error}</div>}</section>
+  async function disconnect() {
+    if (!qrSession) return
+    setBusyUnit(qrSession.unitId); setError('')
+    try { await request(`/messaging/connections/${qrSession.id}/disconnect`, { method: 'POST', body: '{}' }); setQrSession((current) => current ? { ...current, qr: null, status: 'DISCONNECTED' } : current); await refresh(); setNotice('WhatsApp desconectado.') }
+    catch (cause) { setError((cause as Error).message) }
+    finally { setBusyUnit('') }
+  }
+  async function saveMeta(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(''); setBusyMeta(true)
+    try { await request('/messaging/connections/meta', { method: 'POST', body: JSON.stringify(meta) }); setMeta((current) => ({ ...current, displayName: '', wabaId: '', phoneNumberId: '', graphApiVersion: '', accessToken: '', isDefault: false })); await refresh(); setUsage(await request('/usage')); setNotice('Conex\u00e3o Meta Cloud cadastrada.') }
+    catch (cause) { setError((cause as Error).message) } finally { setBusyMeta(false) }
+  }
+  const evolutionByUnit = new Map(items.filter((item) => item.provider === 'EVOLUTION_BAILEYS').map((item) => [String(item.unitId), item]))
+  const used = Number(usage?.usage?.whatsappConnections?.current ?? items.length)
+  const limit = usage?.usage?.whatsappConnections?.limit as number | null | undefined
+  const remaining = limit == null ? null : Math.max(0, limit - used)
+  const limitReached = remaining === 0
+  return <section className="channels-page">
+    <div className="channels-intro"><h2>Conex&otilde;es de WhatsApp</h2><p>Conecte um n&uacute;mero para cada filial. O QR Code &eacute; gerado pelo servidor; voc&ecirc; n&atilde;o precisa informar endere&ccedil;o ou chave da Evolution API.</p></div>
+    <nav className="channel-tabs" aria-label="Tipo de conexao"><button type="button" className={tab === 'evolution' ? 'active' : ''} onClick={() => setTab('evolution')}>WhatsApp por filial</button><button type="button" className={tab === 'meta' ? 'active' : ''} onClick={() => setTab('meta')}>Meta Cloud oficial</button></nav>
+    {tab === 'evolution' ? <>
+      <div className="channel-plan-note">{usage ? <>Conex&otilde;es usadas: {used}{limit == null ? ' &middot; sem limite no plano' : ` de ${limit} \u00b7 ${remaining} dispon\u00edvel(is)`}.</> : 'O limite do plano ser&aacute; verificado ao conectar.'} Cada filial usa uma conex&atilde;o.</div>
+      {loading ? <p role="status">Carregando filiais e conex&otilde;es&hellip;</p> : <div className="evolution-units">{units.map((unit) => {
+        const connection = evolutionByUnit.get(unit.id)
+        const connected = connection?.status === 'CONNECTED'
+        return <article className="evolution-unit-card" key={unit.id}><div className="evolution-unit-heading"><div><span className="evolution-unit-eyebrow">FILIAL</span><h3>{unit.name}</h3></div><span className={`connection-state ${connected ? 'is-connected' : ''}`}>{connected ? 'Conectado' : connection?.status === 'ERROR' ? 'Precisa reconectar' : 'Desconectado'}</span></div>
+          {connected && Boolean(connection?.phoneNumber) && <p className="evolution-connected-number">N&uacute;mero conectado: {String(connection.phoneNumber)}</p>}
+          <p>{connected ? 'Esta filial j&aacute; est&aacute; conectada ao WhatsApp.' : 'Conecte o WhatsApp desta filial para atender conversas e receber mensagens.'}</p>
+          <button type="button" className="primary" disabled={Boolean(busyUnit) || (!connection && limitReached)} onClick={() => void connect(unit)}>{busyUnit === unit.id ? 'Preparando QR Code\u2026' : connected ? 'Ver conex\u00e3o' : 'Conectar ao WhatsApp'}</button>
+          {!connection && limitReached && <small>O limite de conex&otilde;es do plano foi atingido. Para adicionar esta filial, aumente o limite do plano.</small>}
+        </article>
+      })}</div>}
+      {!units.length && <div className="channel-empty">Cadastre uma filial antes de conectar o WhatsApp.</div>}
+      <p className="channel-caution">A conex&atilde;o por QR usa WhatsApp Web (Baileys), n&atilde;o &eacute; um canal oficial da Meta e pode desconectar ou sofrer restri&ccedil;&otilde;es. Disparos em massa de marketing permanecem bloqueados neste modo.</p>
+    </> : <>
+      <p>Conex&atilde;o oficial da Meta Cloud API. Os dados abaixo s&atilde;o fornecidos pelo administrador da conta Meta.</p>
+      <form className="module-form channel-form" onSubmit={(event) => void saveMeta(event)}><label>Nome da conex&atilde;o<input required value={meta.displayName} onChange={(event) => setMeta({ ...meta, displayName: event.target.value })}/></label><label>Filial<select required value={meta.unitId} onChange={(event) => setMeta({ ...meta, unitId: event.target.value })}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label>WABA ID<input required value={meta.wabaId} onChange={(event) => setMeta({ ...meta, wabaId: event.target.value })}/></label><label>Phone Number ID<input required value={meta.phoneNumberId} onChange={(event) => setMeta({ ...meta, phoneNumberId: event.target.value })}/></label><label>Vers&atilde;o da Graph API<input placeholder="vXX.X - confirmar com Meta" value={meta.graphApiVersion} onChange={(event) => setMeta({ ...meta, graphApiVersion: event.target.value })}/></label><label>Token de acesso<input type="password" autoComplete="new-password" required value={meta.accessToken} onChange={(event) => setMeta({ ...meta, accessToken: event.target.value })}/></label><button className="primary" disabled={busyMeta || !units.length}>{busyMeta ? 'Salvando\u2026' : 'Salvar conex&atilde;o Meta'}</button></form>
+      <div className="record-list">{items.filter((item) => item.provider === 'META_CLOUD').map((item) => <article key={item.id}><b>{String(item.displayName)} &middot; {statusLabel(item.status)}</b><span>Filial: {units.find((unit) => unit.id === item.unitId)?.name ?? 'Filial indispon&iacute;vel'} &middot; WABA {String(item.wabaId)} &middot; Phone Number ID {String(item.phoneNumberId)}</span></article>)}</div>
+    </>}
+    {error && <div className="notice" role="alert">{error}</div>}
+    {qrSession && <div className="qr-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setQrSession(null) }}><section className="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title"><header><div><span>CONEX&Atilde;O DA FILIAL</span><h3 id="qr-modal-title">{units.find((unit) => unit.id === qrSession.unitId)?.name ?? 'WhatsApp'}</h3></div><button type="button" aria-label="Fechar" onClick={() => setQrSession(null)}>&times;</button></header>
+      {qrSession.status === 'CONNECTED' ? <div className="qr-connected"><strong>WhatsApp conectado</strong><p>A conex&atilde;o desta filial est&aacute; pronta para receber conversas.</p><button type="button" onClick={() => void disconnect()} disabled={Boolean(busyUnit)}>Desconectar</button></div> : qrSession.qr ? <div className="qr-content"><p>Abra o WhatsApp no celular e acesse <b>Aparelhos conectados &rarr; Conectar aparelho</b>. Depois, aponte a c&acirc;mera para este QR Code.</p><img src={qrSession.qr} alt="QR Code para conectar o WhatsApp"/><span>Esta tela verifica a conex&atilde;o automaticamente.</span><button type="button" onClick={() => { const unit = units.find((entry) => entry.id === qrSession.unitId); if (unit) void connect(unit) }} disabled={Boolean(busyUnit)}>{busyUnit ? 'Gerando&hellip;' : 'Gerar novo QR Code'}</button></div> : <div className="qr-waiting"><strong>{qrSession.status === 'CONNECTING' ? 'WhatsApp conectado' : 'Preparando conex&atilde;o'}</strong><p>{qrSession.status === 'CONNECTING' ? 'O n&uacute;mero j&aacute; est&aacute; conectado.' : 'Aguarde enquanto geramos um novo QR Code.'}</p>{qrSession.status === 'DISCONNECTED' && <button type="button" onClick={() => { const unit = units.find((entry) => entry.id === qrSession.unitId); if (unit) void connect(unit) }}>Gerar QR Code</button>}</div>}
+      </section></div>}
+  </section>
 }
 
 function UnoPanel({ unitId, request, setNotice }: { unitId: string; request: (path: string, init?: RequestInit) => Promise<any>; setNotice: (message: string) => void }) {

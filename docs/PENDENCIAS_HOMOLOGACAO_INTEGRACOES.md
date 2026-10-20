@@ -94,23 +94,23 @@ O teste de interrupção/retorno real do Redis local e o reinício de um worker 
 
 ### Inventário reutilizado do CRM Turismo
 
-O código local em `E:\Documentos\Crm Turismo programa\server\src\whatsapp\` registra Evolution API 2.3.7 (referência encontrada em 26/05/2026; não confirma a VPS atual). O serviço usa header `apikey`, consulta `GET /instance/connectionState/{instance}` e `GET /instance/fetchInstances`, obtém QR via `GET /instance/connect/{instance}`, envia texto por `POST /message/sendText/{instance}` com `{ number, text }`, configura webhook por `POST /webhook/set/{instance}`, cria instância via `POST /instance/create` e tem rotinas de logout/delete. O CRM também faz retry/reconexão, mas usa `storeId`, payloads e semântica que não são contrato do SaaS. A rotina de entrada observa `MESSAGES_UPSERT`/`CONNECTION_UPDATE` e `key.remoteJid`; não demonstra tratamento idempotente suficiente de eco/status para porte direto. O SaaS não implementa criação, logout nem delete remoto.
+O código local em `E:\Documentos\Crm Turismo programa\server\src\whatsapp\` registra Evolution API 2.3.7 (referência encontrada em 26/05/2026; não confirma a VPS atual). O serviço usa header `apikey`, consulta `GET /instance/connectionState/{instance}` e `GET /instance/fetchInstances`, obtém QR via `GET /instance/connect/{instance}`, envia texto por `POST /message/sendText/{instance}` com `{ number, text }`, configura webhook por `POST /webhook/set/{instance}`, cria instância via `POST /instance/create` e tem rotinas de logout/delete. O CRM também faz retry/reconexão, mas usa `storeId`, payloads e semântica que não são contrato do SaaS. A rotina de entrada observa `MESSAGES_UPSERT`/`CONNECTION_UPDATE` e `key.remoteJid`; não demonstra tratamento idempotente suficiente de eco/status para porte direto. Desde 20/10/2026, o SaaS implementa criacao de instancia, QR, consulta de estado, configuracao de webhook e logout pelo servidor. O fluxo ainda depende de configurar o servidor e homologar com a Evolution instalada; delete remoto nao foi implementado.
 
 ### Dados que precisam ser confirmados por canal seguro
 
 - Versão exata em execução, imagem/tag/digest e confirmação de Baileys versus Cloud.
 - URL HTTPS, porta/reverse proxy, certificado, conectividade da API clínica e política de allowlist/firewall. Não enviar API key por chat comum.
-- Nome da instância existente e número associado; autorizar explicitamente consulta/uso sem criar, alterar, desconectar ou excluir.
+- Para instâncias existentes: definir se a conexão deve ser reutilizada ou substituída; o fluxo novo cria e administra a instância por filial ao solicitar o QR.
 - Esquema de autenticação (header `apikey`, `Authorization` ou outro), escopo da chave e eventual credencial por instância.
 - Endpoints/payloads suportados nessa versão para status, QR, texto e webhook; método de desconexão e seu efeito na sessão.
 - Eventos exatos e amostras anonimizadas para `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `CONNECTION_UPDATE`, incluindo `fromMe`, IDs, timestamps, status e eco.
-- Se há assinatura verificável do provedor e algoritmo/header. O endpoint local usa segredo aleatório por conexão no header `x-evolution-webhook-secret`, comparado em tempo constante. Isso autentica posse do segredo, mas não equivale a HMAC do raw body. TLS, proxy autenticado e restrição de rede devem ser verificados antes de tráfego.
+- O endpoint local autentica o webhook com um segredo determinístico por conexão, derivado da chave de integração do servidor e comparado em tempo constante. Isso autentica posse do segredo, mas não equivale a HMAC do raw body. TLS, proxy autenticado e restrição de rede devem ser verificados antes do tráfego.
 - Limites/ritmo por instância, política de sessão, retenção de mídia e regras operacionais. Baileys é WhatsApp Web não oficial; campanhas MKP/massa ficam bloqueadas.
-- Callback público (`API_PUBLIC_URL`) e autorização para configurar webhook. Nenhuma chamada à VPS ou alteração remota foi feita.
+- Callback público (`API_PUBLIC_URL`) e autorização para configurar webhook. O código pode configurar a Evolution ao solicitar QR; nenhuma chamada à VPS ou alteração remota foi feita nesta revisão.
 
 ### Estado local
 
-Configuração cifrada por tenant/unidade, receptor autenticado por conexão, validação de instância quando presente no payload, persistência PostgreSQL antes da fila, dedupe e dry-run estão implementados. Inbound de paciente existente, eco `fromMe` sem duplicação, status e mudança de conexão têm tratamento local baseado nos formatos encontrados nos sistemas legados. Foi preparado `EvolutionInspectionClient`, com contratos de versão tipados e contrato de referência 2.3.7 para consultas GET de status/QR; ele usa transporte injetável e não está ligado à UI/API nem foi chamado contra a VPS. Um teste usa transporte fake local. Não envia texto/mídia externa. `EVOLUTION_CLOUD` é reservado e rejeitado até o contrato e o modo instalado serem confirmados.
+Configuração cifrada por tenant/unidade, receptor autenticado por conexão, validação de instância quando presente no payload, persistência PostgreSQL antes da fila, dedupe e dry-run estão implementados. Inbound de paciente existente, eco `fromMe` sem duplicação, status e mudança de conexão têm tratamento local baseado nos formatos encontrados nos sistemas legados. O painel Canais inicia pelo servidor as operações de instância, QR e estado, com credenciais em variáveis de ambiente; o `EvolutionInspectionClient` segue restrito à leitura de contatos. O QR não foi validado contra a VPS nesta entrega. O envio de mensagens externas continua desativado. `EVOLUTION_CLOUD` é reservado e rejeitado até o contrato e o modo instalado serem confirmados.
 
 ## Meta Cloud API oficial — checklist separado
 
