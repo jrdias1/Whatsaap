@@ -29,14 +29,14 @@ type Page = string
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3002'
 const ResourcesSchedulePanel = lazy(() => import('./ResourcesSchedulePanel.js'))
 const CampaignsPanel = lazy(() => import('./CampaignsPanel.js'))
-const pages: Page[] = ['Visão geral', 'Agenda', 'Relatórios', 'Pacientes', 'Inbox', 'Tarefas', 'Minha conta', 'Recursos', 'Uno', 'Canais', 'Campanhas', 'Indicações', 'Automações', 'IA', 'Plano', 'Equipe', 'Configurações', 'Privacidade']
+const pages: Page[] = ['Visão geral', 'Agenda', 'Relatórios', 'Pacientes', 'Inbox', 'Tarefas', 'Minha conta', 'Recursos', 'Uno', 'Canais', 'Campanhas', 'Automações', 'IA', 'Plano', 'Equipe', 'Configurações', 'Privacidade']
 const pageDescriptions: Record<string, string> = {
   'Visão geral': 'Acompanhe a rotina da clínica e acesse os módulos de atendimento.',
   Agenda: 'Consulte os horários da unidade e organize os agendamentos.',
   Pacientes: 'Encontre cadastros, etiquetas, histórico clínico e conversas.',
   Inbox: 'Leia conversas, responda pacientes e acompanhe o funil.',
   Campanhas: 'Crie mensagens para etapas do funil ou para pacientes selecionados.',
-  Automações: 'Configure mensagens ligadas a agendamentos e atendimentos.',
+  Automações: 'Organize mensagens automáticas, procedimentos e indicações.',
   Tarefas: 'Acompanhe as pendências da equipe.',
   Canais: 'Consulte e configure as conexões de mensagens por unidade.',
   Recursos: 'Organize profissionais, salas e disponibilidade da agenda.',
@@ -48,7 +48,6 @@ const pageDescriptions: Record<string, string> = {
   Equipe: 'Gerencie usuários e permissões da clínica.',
   Configurações: 'Ajuste as preferências da clínica.',
   Privacidade: 'Acompanhe as solicitações de privacidade.',
-  Indicações: 'Acompanhe as indicações e os pacientes vinculados.',
 }
 
 function App() {
@@ -112,7 +111,7 @@ function WorkspaceApp() {
     if (['Configurações', 'Privacidade'].includes(item)) return role === 'TENANT_ADMIN'
     if (item === 'Equipe') return ['TENANT_ADMIN', 'UNIT_MANAGER'].includes(role)
     if (['Canais', 'Uno', 'IA', 'Plano'].includes(item)) return role === 'TENANT_ADMIN'
-    return (role === 'TENANT_ADMIN' || role === 'UNIT_MANAGER' || item === 'Campanhas' && role === 'OPERATOR' || !['Campanhas', 'Indicações', 'Automações', 'Canais', 'Recursos', 'Relatórios'].includes(item)) && (item !== 'Recursos' || ['TENANT_ADMIN', 'UNIT_MANAGER'].includes(role))
+    return (role === 'TENANT_ADMIN' || role === 'UNIT_MANAGER' || item === 'Campanhas' && role === 'OPERATOR' || !['Campanhas', 'Automações', 'Canais', 'Recursos', 'Relatórios'].includes(item)) && (item !== 'Recursos' || ['TENANT_ADMIN', 'UNIT_MANAGER'].includes(role))
   }), [role])
 
   const storeAccessToken = useCallback((accessToken: string) => {
@@ -249,7 +248,7 @@ function WorkspaceApp() {
   }, [storeAccessToken, token])
   useEffect(() => {
     if (!token || mustChangePassword || !sessionReady) return
-    if (page === 'IA' || page === 'Plano' || page === 'Plataforma' || page === 'Tarefas' || page === 'Minha conta' || page === 'Canais' || page === 'Indicações' || page === 'Agenda' || page === 'Recursos' || page === 'Relatórios' || page === 'Visão geral' || page === 'Equipe' || page === 'Configurações' || page === 'Privacidade') return
+    if (page === 'IA' || page === 'Plano' || page === 'Plataforma' || page === 'Tarefas' || page === 'Minha conta' || page === 'Canais' || page === 'Agenda' || page === 'Recursos' || page === 'Relatórios' || page === 'Visão geral' || page === 'Equipe' || page === 'Configurações' || page === 'Privacidade') return
     if (page === 'Pacientes') return
     let path = '/appointments'
     if (page === 'Inbox') path = '/inbox/conversations' + (unitId ? `?unitId=${encodeURIComponent(unitId)}` : '') + (assigneeFilter ? `${unitId ? '&' : '?'}assigneeId=${encodeURIComponent(assigneeFilter)}` : '')
@@ -302,7 +301,7 @@ function WorkspaceApp() {
     if (page === 'Pacientes') { setPatientRefreshKey((value) => value + 1); return }
     if (page === 'Tarefas') { setTaskRefreshKey((value) => value + 1); return }
     if (page === 'Recursos') { setCalendarRefreshKey((value) => value + 1); return }
-    if (page === 'Indicações') { setReferralsRefreshKey((value) => value + 1); return }
+    if (page === 'Automações') { setReferralsRefreshKey((value) => value + 1); return }
     let path = page === 'Inbox' ? '/inbox/conversations' + (unitId ? `?unitId=${encodeURIComponent(unitId)}` : '') + (assigneeFilter ? `${unitId ? '&' : '?'}assigneeId=${encodeURIComponent(assigneeFilter)}` : '') : page === 'Campanhas' ? '/campaigns' : page === 'Automações' ? '/automations' : '/appointments'
     if (page === 'Agenda') path += `?from=${encodeURIComponent(new Date(Date.now() - 7 * 86400000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 30 * 86400000).toISOString())}`
     setRows(await request(path))
@@ -371,13 +370,13 @@ function WorkspaceApp() {
       {page === 'Equipe' && <TeamManagementPage request={request} units={units} role={role} userId={userId} setNotice={setNotice} refreshKey={adminRefreshKey}/>}
       {page === 'Configurações' && <ClinicSettingsPage request={request} setNotice={setNotice} onThemeUpdated={(clinic) => setTenantTheme(clinic)} onNavigate={setPage} refreshKey={adminRefreshKey}/>}
       {page === 'Privacidade' && <PrivacyRequestsPage request={request} setNotice={setNotice}/>}
-      {page === 'Indicações' && <ReferralsPanel request={request} units={units} setNotice={setNotice} refreshKey={referralsRefreshKey}/>}
       {page === 'Campanhas' && <Suspense fallback={<p className="calendar-state" role="status">Carregando campanhas…</p>}><CampaignsPanel rows={rows} request={request} onRefresh={reload} setNotice={setNotice} onOpenInbox={() => { setInboxView('KANBAN'); setPage('Inbox') }}/></Suspense>}
-      {page === 'Automações' && <AutomationsPanel key={`${unitId}:${userId}`} unitId={unitId} units={units} userId={userId} request={request} setNotice={setNotice}/>}
+      {page === 'Automações' && <AutomationsPanel key={`${unitId}:${userId}`} unitId={unitId} units={units} userId={userId} request={request} setNotice={setNotice} referralsRefreshKey={referralsRefreshKey} canManageReferrals={['TENANT_ADMIN', 'UNIT_MANAGER'].includes(role)}/>}
       </section></main></div>
 }
 
-function AutomationsPanel({ unitId, units, userId, request, setNotice }: { unitId: string; units: Unit[]; userId: string; request: (path: string, init?: RequestInit) => Promise<any>; setNotice: (message: string) => void }) {
+function AutomationsPanel({ unitId, units, userId, request, setNotice, referralsRefreshKey, canManageReferrals }: { unitId: string; units: Unit[]; userId: string; request: (path: string, init?: RequestInit) => Promise<any>; setNotice: (message: string) => void; referralsRefreshKey: number; canManageReferrals: boolean }) {
+  const [activeTab, setActiveTab] = useState<'flows' | 'editor' | 'procedures' | 'referrals' | 'executions'>('flows')
   const [items, setItems] = useState<Row[]>([])
   const [procedures, setProcedures] = useState<Row[]>([])
   const [automationTags, setAutomationTags] = useState<Row[]>([])
@@ -402,7 +401,7 @@ function AutomationsPanel({ unitId, units, userId, request, setNotice }: { unitI
     thankVeryPoor: 'Obrigado por nos avisar. Nossa equipe vai acompanhar seu relato.', regularAction: 'NONE', noResponseAction: 'NONE', responsibleUserId: userId,
   })
   const load = useCallback(async () => { const [rules, catalog, tags] = await Promise.all([request('/automations'), request('/procedures'), request('/patients/tags')]); setItems(rules); setProcedures(catalog); setAutomationTags(tags) }, [request])
-  useEffect(() => { void load().catch((cause: Error) => setError(cause.message)) }, [load])
+  useEffect(() => { void load().catch((cause: Error) => setError(cause.message)) }, [load, referralsRefreshKey])
   useEffect(() => { request(`/inbox/assignees?unitId=${encodeURIComponent(form.unitId || unitId)}`).then(setAutomationAssignees).catch(() => setAutomationAssignees([])) }, [request, unitId, form.unitId])
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setBusy(true)
@@ -428,20 +427,24 @@ function AutomationsPanel({ unitId, units, userId, request, setNotice }: { unitI
       setHistory(await request(`/automations/${item.id}/executions`))
       if (item.trigger === 'POST_CARE_SATISFACTION') setResults(await request(`/automations/${item.id}/satisfaction-results`))
     } catch (cause) { setError((cause as Error).message) }
+    setActiveTab('editor')
   }
+  async function viewExecutions(item: Row) { await choose(item); setActiveTab('executions') }
+  function newRule() { setSelectedId(''); setHistory([]); setResults(null); setForm((current) => ({ ...current, name: '', trigger: 'APPOINTMENT_CONFIRMATION', unitId, procedureId: '', targetTagId: '', steps: [{ id: String(crypto.randomUUID()), delayMinutes: 0, body: '' }] })); setActiveTab('editor') }
   async function setStatus(item: Row) {
     try { const status = item.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'; await request(`/automations/${item.id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }); setNotice(status === 'ACTIVE' ? 'Regra ativada; as execuções locais permanecem em modo de simulação.' : 'Regra pausada; as execuções e mensagens pendentes foram canceladas.'); await load() }
     catch (cause) { setError((cause as Error).message) }
   }
   const set = (key: string, value: string | number) => setForm((current) => ({ ...current, [key]: value }))
-  return <div className="module-form stacked automation-workspace"><h2>Automações</h2><p>Confirmações e pesquisas de satisfação usam uma fila única de mensagens. Nesta etapa, toda execução é apenas simulada e nenhuma mensagem é enviada externamente.</p>
-    <section className="module-form stacked"><h3>Catálogo de procedimentos</h3><p>Duração em minutos é para agenda; prazo de retorno e antecedência são dias estimados configurados pela clínica.</p>
+  return <div className="module-form stacked automation-workspace"><h2>Automações</h2><p>Organize mensagens automáticas, procedimentos e o programa de indicações. Nesta etapa, os envios são simulados e nenhuma mensagem é enviada externamente.</p>
+    <div className="inbox-toolbar automation-tabs" role="group" aria-label="Áreas de automação"><button type="button" className={activeTab === 'flows' ? 'active' : ''} aria-pressed={activeTab === 'flows'} onClick={() => setActiveTab('flows')}>Fluxos</button><button type="button" className={activeTab === 'editor' ? 'active' : ''} aria-pressed={activeTab === 'editor'} onClick={newRule}>Nova regra</button><button type="button" className={activeTab === 'procedures' ? 'active' : ''} aria-pressed={activeTab === 'procedures'} onClick={() => setActiveTab('procedures')}>Procedimentos</button>{canManageReferrals && <button type="button" className={activeTab === 'referrals' ? 'active' : ''} aria-pressed={activeTab === 'referrals'} onClick={() => setActiveTab('referrals')}>Indicações</button>}<button type="button" className={activeTab === 'executions' ? 'active' : ''} aria-pressed={activeTab === 'executions'} onClick={() => setActiveTab('executions')}>Execuções</button></div>
+    <section className="module-form stacked" hidden={activeTab !== 'procedures'}><h3>Catálogo de procedimentos</h3><p>Duração em minutos é para agenda; prazo de retorno e antecedência são dias estimados configurados pela clínica.</p>
       <label>Procedimento<select value={procedureForm.id} onChange={(e) => { const p = procedures.find((x) => x.id === e.target.value); setProcedureForm(p ? { id: String(p.id), name: String(p.name), unitId: String(p.unitId ?? ''), appointmentDurationMinutes: Number(p.appointmentDurationMinutes), returnAfterDays: Number(p.returnAfterDays ?? 10), reminderAdvanceDays: Number(p.reminderAdvanceDays ?? 2) } : { id: '', name: '', unitId: '', appointmentDurationMinutes: 30, returnAfterDays: 10, reminderAdvanceDays: 2 }); if (p) set('procedureId', String(p.id)) }}><option value="">Novo procedimento</option>{procedures.map((p) => <option key={p.id} value={p.id}>{String(p.name)}</option>)}</select></label>
       <label>Nome<input value={procedureForm.name} onChange={(e) => setProcedureForm((p) => ({ ...p, name: e.target.value }))}/></label><label>Unidade<select value={procedureForm.unitId} onChange={(e) => setProcedureForm((p) => ({ ...p, unitId: e.target.value }))}><option value="">Compartilhado</option>{units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
       <label>Duração na agenda (minutos)<input type="number" min="5" max="1440" value={procedureForm.appointmentDurationMinutes} onChange={(e) => setProcedureForm((p) => ({ ...p, appointmentDurationMinutes: Number(e.target.value) }))}/></label><label>Efeito estimado (dias)<input type="number" min="1" max="3650" value={procedureForm.returnAfterDays} onChange={(e) => setProcedureForm((p) => ({ ...p, returnAfterDays: Number(e.target.value) }))}/></label><label>Antecedência do contato (dias)<input type="number" min="0" max={procedureForm.returnAfterDays} value={procedureForm.reminderAdvanceDays} onChange={(e) => setProcedureForm((p) => ({ ...p, reminderAdvanceDays: Number(e.target.value) }))}/></label>
       <button type="button" onClick={async () => { try { const saved = procedureForm.id ? await request(`/procedures/${procedureForm.id}`, { method: 'PATCH', body: JSON.stringify(procedureForm) }) : await request('/procedures', { method: 'POST', body: JSON.stringify(procedureForm) }); setProcedureForm((p) => ({ ...p, id: String(saved.id) })); set('procedureId', String(saved.id)); setNotice('Procedimento salvo.'); await load() } catch (cause) { setError((cause as Error).message) } }}>Salvar procedimento</button>
     </section>
-    <form className="module-form stacked" onSubmit={save}><strong>{selectedId ? 'Editar regra' : 'Nova regra'}</strong>
+    <form className="module-form stacked" hidden={activeTab !== 'editor'} onSubmit={save}><strong>{selectedId ? 'Editar regra' : 'Nova regra'}</strong>
       <label>Tipo<select value={form.trigger} disabled={Boolean(selectedId)} onChange={(e) => set('trigger', e.target.value)}><option value="APPOINTMENT_CONFIRMATION">Confirmação de agendamento</option><option value="POST_CARE_SATISFACTION">Pesquisa de satisfação pós-atendimento</option><option value="PROCEDURE_RETURN">Retorno por procedimento</option><option value="POST_CARE_TAG_FLOW">Fluxo pós-atendimento por etiqueta</option></select></label>
       <input required maxLength={120} placeholder="Nome da regra" value={form.name} onChange={(e) => set('name', e.target.value)}/>
       <label>Unidade<select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
@@ -479,9 +482,11 @@ function AutomationsPanel({ unitId, units, userId, request, setNotice }: { unitI
       <label>Responsável por tarefas<select required value={form.responsibleUserId} onChange={(e) => set('responsibleUserId', e.target.value)}>{automationAssignees.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
       <button className="primary" disabled={busy}>{busy ? 'Salvando...' : 'Salvar como rascunho'}</button>{selectedId && <button type="button" onClick={() => { setSelectedId(''); setHistory([]); setResults(null) }}>Cancelar edição</button>}
     </form>
-    <div className="record-list">{items.map((item) => { const config = item.configuration as Record<string, any>; const metrics = (item.metrics ?? {}) as Record<string, unknown>; const triggerName = item.trigger === 'POST_CARE_SATISFACTION' ? 'Pesquisa de satisfação' : item.trigger === 'PROCEDURE_RETURN' ? 'Retorno por procedimento' : item.trigger === 'POST_CARE_TAG_FLOW' ? 'Fluxo pós-atendimento' : 'Confirmação'; const tagName = automationTags.find((tag) => tag.id === config?.targetTagId)?.name; return <article key={item.id}><b>{String(item.name)} · {triggerName}{item.trigger === 'POST_CARE_TAG_FLOW' ? ` · ${tagName ? `Etiqueta: ${String(tagName)}` : 'Todos os pacientes'}` : ''} · {statusLabel(item.status)}</b><span>Unidade: {units.find((u) => u.id === config?.unitId)?.name ?? '—'} · {item.trigger === 'POST_CARE_TAG_FLOW' ? `${Array.isArray(config?.steps) ? config.steps.length : 0} etapa(s)` : `antecedência: ${String(config?.advanceMinutes ?? '—')} min`} · canal: {statusLabel(config?.provider ?? '—')}</span><span>Execuções: {Number(metrics.total ?? 0).toLocaleString('pt-BR')} · pendentes: {Number(metrics.pending ?? 0).toLocaleString('pt-BR')} · simulações: {Number(metrics.simulated ?? 0).toLocaleString('pt-BR')} · suprimidas: {Number(metrics.suppressed ?? 0).toLocaleString('pt-BR')} · falhas: {Number(metrics.failed ?? 0).toLocaleString('pt-BR')} · respostas: {Number(metrics.surveyResponses ?? 0).toLocaleString('pt-BR')} · tarefas: {Number(metrics.taskCount ?? 0).toLocaleString('pt-BR')}</span><div><button type="button" onClick={() => void choose(item)}>Editar / histórico</button><button type="button" onClick={() => void setStatus(item)}>{item.status === 'ACTIVE' ? 'Pausar' : 'Ativar'}</button></div></article> })}</div>
-    {results && <section className="record-list"><h3>Respostas registradas — cinco classificações</h3><p>Pesquisas simuladas sem resposta não entram neste resultado.</p>{Object.entries(results.received ?? {}).map(([classification, count]) => <article key={classification}><b>{classification}</b><span>{String(count)}</span></article>)}<small>Total {String(results.total)} · pendentes {String(results.pending)} · simuladas {String(results.simulated)} · expiradas {String(results.expired)} · suprimidas {String(results.suppressed)} · falhas {String(results.failed)}</small></section>}
-    {history.length > 0 && <section><h3>Histórico de execuções · simulações sem envio</h3>{history.map((item) => <article key={item.id}><b>{statusLabel(item.status)} · {new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(new Date(String(item.scheduledAt)))}</b><span>{item.outboxMessageId ? 'Registro de mensagem associado' : String(item.lastError ?? 'Sem mensagem associada')}</span>{Boolean(item.survey) && <small>Pesquisa: {statusLabel((item.survey as Record<string, unknown>).state)} · classificação: {statusLabel((item.survey as Record<string, unknown>).classification ?? 'sem resposta')}</small>}{Boolean(item.outbox) && <small>Fila de mensagens: {statusLabel((item.outbox as Record<string, unknown>).status)} {String((item.outbox as Record<string, unknown>).suppressionReason ?? '')}</small>}</article>)}</section>}
+    <div className="record-list" hidden={activeTab !== 'flows'}>{items.map((item) => { const config = item.configuration as Record<string, any>; const metrics = (item.metrics ?? {}) as Record<string, unknown>; const triggerName = item.trigger === 'POST_CARE_SATISFACTION' ? 'Pesquisa de satisfação' : item.trigger === 'PROCEDURE_RETURN' ? 'Retorno por procedimento' : item.trigger === 'POST_CARE_TAG_FLOW' ? 'Fluxo pós-atendimento' : 'Confirmação'; const tagName = automationTags.find((tag) => tag.id === config?.targetTagId)?.name; return <article key={item.id}><b>{String(item.name)} · {triggerName}{item.trigger === 'POST_CARE_TAG_FLOW' ? ` · ${tagName ? `Etiqueta: ${String(tagName)}` : 'Todos os pacientes'}` : ''} · {statusLabel(item.status)}</b><span>Unidade: {units.find((u) => u.id === config?.unitId)?.name ?? '—'} · {item.trigger === 'POST_CARE_TAG_FLOW' ? `${Array.isArray(config?.steps) ? config.steps.length : 0} etapa(s)` : `antecedência: ${String(config?.advanceMinutes ?? '—')} min`} · canal: {statusLabel(config?.provider ?? '—')}</span><span>Execuções: {Number(metrics.total ?? 0).toLocaleString('pt-BR')} · pendentes: {Number(metrics.pending ?? 0).toLocaleString('pt-BR')} · simulações: {Number(metrics.simulated ?? 0).toLocaleString('pt-BR')} · suprimidas: {Number(metrics.suppressed ?? 0).toLocaleString('pt-BR')} · falhas: {Number(metrics.failed ?? 0).toLocaleString('pt-BR')} · respostas: {Number(metrics.surveyResponses ?? 0).toLocaleString('pt-BR')} · tarefas: {Number(metrics.taskCount ?? 0).toLocaleString('pt-BR')}</span><div><button type="button" onClick={() => void choose(item)}>Editar regra</button><button type="button" onClick={() => void viewExecutions(item)}>Ver execuções</button><button type="button" onClick={() => void setStatus(item)}>{item.status === 'ACTIVE' ? 'Pausar' : 'Ativar'}</button></div></article> })}{!items.length && <article><b>Nenhum fluxo cadastrado</b><span>Crie uma regra para confirmação, retorno ou acompanhamento pós-atendimento.</span><button type="button" onClick={newRule}>Criar primeira regra</button></article>}</div>
+    {activeTab === 'referrals' && canManageReferrals && <ReferralsPanel request={request} units={units} setNotice={setNotice} refreshKey={referralsRefreshKey}/>}
+    {results && activeTab === 'executions' && <section className="record-list"><h3>Respostas registradas — cinco classificações</h3><p>Pesquisas simuladas sem resposta não entram neste resultado.</p>{Object.entries(results.received ?? {}).map(([classification, count]) => <article key={classification}><b>{classification}</b><span>{String(count)}</span></article>)}<small>Total {String(results.total)} · pendentes {String(results.pending)} · simuladas {String(results.simulated)} · expiradas {String(results.expired)} · suprimidas {String(results.suppressed)} · falhas {String(results.failed)}</small></section>}
+    {activeTab === 'executions' && history.length > 0 && <section><h3>Histórico de execuções · simulações sem envio</h3>{history.map((item) => <article key={item.id}><b>{statusLabel(item.status)} · {new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(new Date(String(item.scheduledAt)))}</b><span>{item.outboxMessageId ? 'Registro de mensagem associado' : String(item.lastError ?? 'Sem mensagem associada')}</span>{Boolean(item.survey) && <small>Pesquisa: {statusLabel((item.survey as Record<string, unknown>).state)} · classificação: {statusLabel((item.survey as Record<string, unknown>).classification ?? 'sem resposta')}</small>}{Boolean(item.outbox) && <small>Fila de mensagens: {statusLabel((item.outbox as Record<string, unknown>).status)} {String((item.outbox as Record<string, unknown>).suppressionReason ?? '')}</small>}</article>)}</section>}
+    {activeTab === 'executions' && !history.length && <p>Para consultar, abra a aba Fluxos e escolha “Ver execuções” em uma regra.</p>}
     {error && <div role="alert">{error}</div>}
   </div>
 }

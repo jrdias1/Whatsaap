@@ -483,3 +483,5 @@
     grid-template-columns: 1fr;
   }
 }
+.automation-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.automation-workspace [hidden],.referrals-workspace [hidden]{display:none!important}.referrals-workspace{display:grid;gap:14px;min-width:0}.referral-tabs{margin-bottom:0}.automation-workspace .record-list[hidden]{display:none!important}
+@media(max-width:560px){.automation-tabs button{flex:1 1 auto;min-height:42px}.resource-schedule-tabs button{flex:1 1 auto}}

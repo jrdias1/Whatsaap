@@ -70,11 +70,12 @@ test('administração, lead público idempotente, aprovação, emissão, resgate
   const patientCountBefore = await db.patient.count({ where: { tenantId } })
   const consentCountBefore = await db.consentPreference.count({ where: { tenantId } })
   await signIn(page, email)
+  await page.getByRole('button', { name: 'Automações' }).click()
   await page.getByRole('button', { name: 'Indicações' }).click()
-  await expect(page.getByRole('heading', { name: 'Indicações' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Programa de indicações' })).toBeVisible()
 
   const campaignName = `Campanha navegador ${suffix}`
-  const form = page.locator('form.module-form').first()
+  const form = page.locator('.referrals-workspace form.module-form').first()
   await form.getByPlaceholder('Nome da campanha').fill(campaignName)
   await form.locator('input[type="datetime-local"]').first().fill(localDateTime(new Date(Date.now() - 60_000)))
   await form.locator('select').nth(0).selectOption('LEAD_REGISTERED')
@@ -146,6 +147,7 @@ test('administração, lead público idempotente, aprovação, emissão, resgate
   await visitor.close()
 
   await page.getByRole('button', { name: 'Atualizar' }).click()
+  await page.getByRole('button', { name: 'Registros' }).click()
   const referralArticle = page.locator('article').filter({ hasText: campaignName }).filter({ hasText: referredPhone })
   await expect(referralArticle.getByLabel('Paciente existente para associar')).toBeVisible()
   await referralArticle.getByLabel('Paciente existente para associar').selectOption(referredPatientId)
@@ -167,6 +169,7 @@ test('administração, lead público idempotente, aprovação, emissão, resgate
   expect(deniedStatus).toBe(403)
   await operatorContext.close()
 
+  await page.getByRole('button', { name: 'Recompensas e resgates' }).click()
   await page.getByRole('button', { name: 'Aprovar' }).click()
   await expect(page.getByText(/Recompensa aprovada/)).toBeVisible()
   await page.getByRole('button', { name: 'Emitir voucher' }).click()
@@ -178,7 +181,7 @@ test('administração, lead público idempotente, aprovação, emissão, resgate
   const issuedReward = await db.referralReward.findUniqueOrThrow({ where: { id: pendingReward.id } })
   expect(issuedReward.expiresAt!.getTime() - issuedReward.issuedAt!.getTime()).toBe(90 * 86400000)
 
-  const redeemForm = page.locator('form.module-form').filter({ hasText: 'Registrar resgate interno' })
+  const redeemForm = page.locator('.referrals-workspace form.module-form').filter({ hasText: 'Registrar resgate interno' })
   await redeemForm.getByLabel('Código do voucher').fill(voucherCode!)
   await redeemForm.getByLabel('Unidade do resgate').selectOption(unitId)
   await redeemForm.getByLabel('Quantidade').fill('1')
@@ -186,9 +189,11 @@ test('administração, lead público idempotente, aprovação, emissão, resgate
   await expect(page.getByText(/Resgate registrado no SaaS/)).toBeVisible()
   expect((await db.referralReward.findUniqueOrThrow({ where: { id: pendingReward.id } })).status).toBe('USED')
 
-  const loyaltySection = page.locator('section.module-form').filter({ hasText: 'Cartão fidelidade administrativo' })
+  await page.getByRole('button', { name: 'Fidelidade' }).click()
+  const loyaltySection = page.locator('.referrals-workspace section.module-form').filter({ hasText: 'Cartão fidelidade administrativo' })
   await loyaltySection.locator('select').selectOption(indicatorPatientId)
   await expect(loyaltySection.getByText(/1\/1/)).toBeVisible()
+  await page.getByRole('button', { name: 'Registros' }).click()
   await page.once('dialog', async (dialog) => dialog.accept('Cancelamento após recompensa já usada; revisão humana necessária.'))
   await referralArticle.getByRole('button', { name: 'Cancelar', exact: true }).click()
   await expect(page.getByText(/Indicação atualizada para cancelado/)).toBeVisible()

@@ -13,12 +13,12 @@ type Props = {
 
 const groups = [
   { title: 'OPERAÇÃO', pages: ['Visão geral', 'Agenda', 'Pacientes', 'Inbox', 'Tarefas', 'Campanhas', 'Relatórios'] },
-  { title: 'GESTÃO CLÍNICA', pages: ['Equipe', 'Recursos', 'Automações', 'Indicações', 'Canais', 'Uno', 'IA', 'Plano', 'Configurações', 'Privacidade'] },
+  { title: 'GESTÃO CLÍNICA', pages: ['Equipe', 'Recursos', 'Automações', 'Canais', 'Uno', 'IA', 'Plano', 'Configurações', 'Privacidade'] },
 ]
 const descriptions: Record<string, string> = {
   'Visão geral': 'Resumo da clínica', Agenda: 'Atendimentos e horários', Pacientes: 'Cadastro e histórico', Inbox: 'Conversas do WhatsApp',
   Tarefas: 'Pendências da equipe', Campanhas: 'Mensagens para pacientes', Relatórios: 'Resultados e NPS', Equipe: 'Usuários e permissões',
-  Recursos: 'Profissionais e salas', Automações: 'Confirmações e retornos', Indicações: 'Programa de indicações', Canais: 'WhatsApp e conexões',
+  Recursos: 'Profissionais e salas', Automações: 'Fluxos, procedimentos e indicações', Indicações: 'Programa de indicações', Canais: 'WhatsApp e conexões',
   Uno: 'Integração da agenda', IA: 'Rascunhos assistidos', Plano: 'Plano e consumo', Configurações: 'Dados e preferências', Privacidade: 'Solicitações e registros', 'Minha conta': 'Acesso e senha',
 }
 const iconPaths: Record<string, string> = {
