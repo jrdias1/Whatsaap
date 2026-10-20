@@ -20,6 +20,12 @@ export class MessagingConnectionsService {
     return scope;
   }
 
+  private connectionActionScope() {
+    const scope = this.context.current();
+    if (!scope || !['TENANT_ADMIN', 'OPERATOR'].includes(scope.role)) throw new ForbiddenException('Apenas o administrador da cl\u00ednica pode gerenciar canais.');
+    return scope;
+  }
+
   async list(unitId?: string) {
     const scope = this.scope();
     if (unitId) await this.assertUnit(scope.tenantId, unitId);
@@ -34,28 +40,47 @@ export class MessagingConnectionsService {
     ];
   }
 
-  /** Creates or reuses the tenant's one Evolution connection for this unit and returns a real QR. */
+  /** Creates or reuses a clinic branch connection and returns its QR. */
   async connectEvolution(unitIdInput: unknown) {
-    const scope = this.scope();
+    const scope = this.connectionActionScope();
+    const isOperator = scope.role === 'OPERATOR';
     const unitId = this.string(unitIdInput, 'unitId', 80);
     await this.assertUnit(scope.tenantId, unitId);
-    const apiBaseUrl = this.evolutionApiUrl();
-    const apiKey = this.evolutionApiKey();
-    const unit = await this.prisma.scoped.unit.findFirst({ where: { tenantId: scope.tenantId, id: unitId, active: true }, select: { id: true, name: true } });
-    if (!unit) throw new NotFoundException('Unidade não encontrada.');
+    if (isOperator) await this.assertOperatorUnit(scope.membershipId, unitId);
 
+    const unit = await this.prisma.scoped.unit.findFirst({ where: { tenantId: scope.tenantId, id: unitId, active: true }, select: { id: true, name: true } });
+    if (!unit) throw new NotFoundException('Filial n\u00e3o encontrada.');
     let connection = await this.prisma.scoped.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' }, orderBy: { createdAt: 'asc' } });
+    if (isOperator && (!connection || !connection.enabled)) throw new ForbiddenException('Esta filial ainda n\u00e3o tem uma conex\u00e3o ativa configurada pelo administrador.');
+
+    const apiBaseUrl = isOperator ? connection!.apiBaseUrl : this.evolutionApiUrl();
+    const apiKey = isOperator ? decryptSecret(connection!.apiKeyEncrypted) : this.evolutionApiKey();
+    if (isOperator) {
+      try {
+        const state = await this.evolutionRequest(apiBaseUrl, apiKey, `/instance/connectionState/${encodeURIComponent(connection!.instanceName)}`);
+        if (this.isConnected(state)) {
+          await this.prisma.scoped.evolutionConnection.update({ where: { id: connection!.id }, data: { status: 'CONNECTED', lastCheckedAt: new Date(), lastError: null } });
+          return { id: connection!.id, unitId, status: 'CONNECTED', qr: null, alreadyConnected: true };
+        }
+      } catch {
+        throw new BadGatewayException('N\u00e3o foi poss\u00edvel verificar a conex\u00e3o desta filial. Solicite a verifica\u00e7\u00e3o ao administrador.');
+      }
+    }
+
+    const tenant = await this.prisma.scoped.tenant.findUnique({ where: { id: scope.tenantId }, select: { name: true } });
+    if (!tenant) throw new NotFoundException('Cl\u00ednica n\u00e3o encontrada.');
     if (!connection) {
       connection = await this.prisma.unscoped.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${scope.tenantId}:evolution-unit:${unitId}`}, 0))`;
         const existing = await tx.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' } });
         if (existing) return existing;
+        if (isOperator) throw new ForbiddenException('Esta filial n\u00e3o tem uma conex\u00e3o WhatsApp configurada pelo administrador.');
         await this.usage.assertCapacityWithinTransaction(tx, 'connections', scope.tenantId);
-        const instanceName = `ec_${scope.tenantId.replaceAll('-', '').slice(0, 12)}_${unitId.replaceAll('-', '').slice(0, 12)}`;
+        const instanceName = this.buildInstanceName(tenant.name, unit.name, scope.tenantId, unitId);
         const id = randomUUID();
         const webhookSecret = this.webhookSecret(id);
         return tx.evolutionConnection.create({ data: {
-          id, tenantId: scope.tenantId, unitId, displayName: `WhatsApp · ${unit.name}`,
+          id, tenantId: scope.tenantId, unitId, displayName: `${tenant.name} - ${unit.name}`,
           apiBaseUrl, instanceName, mode: 'EVOLUTION_BAILEYS', apiVersion: process.env.EVOLUTION_API_VERSION?.trim() || 'UNCONFIRMED',
           apiKeyEncrypted: encryptSecret(apiKey), webhookSecretHash: createHash('sha256').update(webhookSecret).digest('hex'),
           status: 'DISCONNECTED', enabled: true, isDefault: true,
@@ -63,17 +88,21 @@ export class MessagingConnectionsService {
       });
       await this.audit(scope.tenantId, scope.userId, 'EVOLUTION_CONNECTION_CREATED', 'EvolutionConnection', connection.id, { unitId, provider: 'EVOLUTION_BAILEYS' });
     }
+
     const webhookSecret = this.webhookSecret(connection.id);
-    await this.prisma.scoped.evolutionConnection.updateMany({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS', id: { not: connection.id } }, data: { isDefault: false } });
+    if (!isOperator) {
+      await this.prisma.scoped.evolutionConnection.updateMany({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS', id: { not: connection.id } }, data: { isDefault: false } });
+    }
     connection = await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: {
-      apiBaseUrl, apiKeyEncrypted: encryptSecret(apiKey),
-      webhookSecretHash: createHash('sha256').update(webhookSecret).digest('hex'), enabled: true, isDefault: true,
+      ...(!isOperator ? { apiBaseUrl, apiKeyEncrypted: encryptSecret(apiKey) } : {}),
+      webhookSecretHash: createHash('sha256').update(webhookSecret).digest('hex'), enabled: true,
+      ...(!isOperator ? { isDefault: true } : {}),
     } });
 
     try {
       await this.ensureEvolutionInstance(apiBaseUrl, connection.instanceName, apiKey);
       const webhookUrl = this.evolutionWebhookUrl(connection.id);
-      if (!webhookUrl) throw new Error('API_PUBLIC_URL não configurada.');
+      if (!webhookUrl) throw new Error('API_PUBLIC_URL n\u00e3o configurada.');
       await this.evolutionRequest(apiBaseUrl, apiKey, `/webhook/set/${encodeURIComponent(connection.instanceName)}`, {
         method: 'POST', body: { webhook: { url: webhookUrl, enabled: true, webhookByEvents: false, events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'], headers: { 'x-evolution-webhook-secret': webhookSecret } } },
       });
@@ -87,9 +116,30 @@ export class MessagingConnectionsService {
       await this.audit(scope.tenantId, scope.userId, 'EVOLUTION_QR_GENERATED', 'EvolutionConnection', connection.id, { unitId });
       return { id: connection.id, unitId, status: 'CONNECTING', qr, alreadyConnected: false };
     } catch (error) {
-      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'ERROR', lastCheckedAt: new Date(), lastError: error instanceof Error ? error.message.slice(0, 500) : 'Falha ao conectar à Evolution API.' } }).catch(() => undefined);
+      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'ERROR', lastCheckedAt: new Date(), lastError: error instanceof Error ? error.message.slice(0, 500) : 'Falha ao conectar com a Evolution API.' } }).catch(() => undefined);
       if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ForbiddenException) throw error;
-      throw new BadGatewayException('Não foi possível conectar ao WhatsApp agora. Verifique a Evolution API e tente novamente.');
+      throw new BadGatewayException('N\u00e3o foi poss\u00edvel conectar ao WhatsApp agora. Verifique a Evolution API e tente novamente.');
+    }
+  }
+
+  /** Gives operators only a yes/no operational status for their assigned branch. */
+  async operatorConnectionStatus(unitIdInput: unknown) {
+    const scope = this.connectionActionScope();
+    const unitId = this.string(unitIdInput, 'unitId', 80);
+    await this.assertUnit(scope.tenantId, unitId);
+    if (scope.role === 'OPERATOR') await this.assertOperatorUnit(scope.membershipId, unitId);
+    const connection = await this.prisma.scoped.evolutionConnection.findFirst({ where: { tenantId: scope.tenantId, unitId, mode: 'EVOLUTION_BAILEYS' }, select: { id: true, enabled: true, apiBaseUrl: true, apiKeyEncrypted: true, instanceName: true } });
+    if (!connection) return { unitId, configured: false, status: 'NOT_CONFIGURED', canReconnect: false };
+    if (!connection.enabled) return { unitId, configured: true, status: 'DISABLED', canReconnect: false };
+    try {
+      const state = await this.evolutionRequest(connection.apiBaseUrl, decryptSecret(connection.apiKeyEncrypted), `/instance/connectionState/${encodeURIComponent(connection.instanceName)}`);
+      const rawState = this.connectionState(state);
+      const status = rawState === 'open' ? 'CONNECTED' : rawState === 'connecting' || rawState === 'qr' ? 'CONNECTING' : 'DISCONNECTED';
+      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: status === 'CONNECTED' ? 'CONNECTED' : 'DISCONNECTED', lastCheckedAt: new Date(), lastError: null } });
+      return { unitId, configured: true, status, canReconnect: status !== 'CONNECTED' };
+    } catch {
+      await this.prisma.scoped.evolutionConnection.update({ where: { id: connection.id }, data: { status: 'ERROR', lastCheckedAt: new Date() } }).catch(() => undefined);
+      return { unitId, configured: true, status: 'ERROR', canReconnect: true };
     }
   }
 
@@ -290,6 +340,14 @@ export class MessagingConnectionsService {
 
   private async assertUnit(tenantId: string, unitId: string) {
     if (!(await this.prisma.scoped.unit.findFirst({ where: { tenantId, id: unitId, active: true }, select: { id: true } }))) throw new NotFoundException('Unidade não encontrada no tenant.');
+  }
+  private async assertOperatorUnit(membershipId: string, unitId: string) {
+    if (!await this.prisma.scoped.unitMembership.findFirst({ where: { membershipId, unitId }, select: { unitId: true } })) throw new ForbiddenException('Esta filial n\u00e3o est\u00e1 no seu escopo.');
+  }
+  private buildInstanceName(tenantName: string, unitName: string, tenantId: string, unitId: string) {
+    const segment = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'unidade';
+    const suffix = createHash('sha256').update(`${tenantId}:${unitId}`).digest('hex').slice(0, 8);
+    return `ec-${segment(tenantName)}-${segment(unitName)}-${suffix}`.slice(0, 80);
   }
   private string(value: unknown, name: string, max: number) {
     if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new BadRequestException(`${name} é obrigatório e deve ter até ${max} caracteres.`);

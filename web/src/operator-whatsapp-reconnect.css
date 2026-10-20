@@ -1,0 +1,9 @@
+﻿.operator-whatsapp-alert{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 14px;padding:14px 16px;border:1px solid #e8cf9a;border-radius:10px;background:#fff8e9;color:#5b4719}
+.operator-whatsapp-alert>div{min-width:0}
+.operator-whatsapp-alert strong{display:block;font-size:14px}
+.operator-whatsapp-alert p{margin:4px 0 0;color:#705a2b;font-size:13px;line-height:1.45}
+.operator-whatsapp-alert small{display:block;margin-top:6px;color:#9b3f37;font-size:12px}
+.operator-whatsapp-alert .primary{flex:none}
+.operator-reconnect-modal .qr-content>button,.operator-reconnect-modal .qr-waiting>button{min-height:40px}
+@media(max-width:620px){.operator-whatsapp-alert{align-items:stretch;flex-direction:column}.operator-whatsapp-alert .primary{width:100%}}
+.evolution-instance-name{display:block;color:var(--text-muted);font-size:12px;overflow-wrap:anywhere}
