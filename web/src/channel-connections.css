@@ -27,4 +27,37 @@
 .qr-content>span{font-size:13px;color:var(--text-muted)}
 .qr-content>button,.qr-waiting>button,.qr-connected>button{width:100%}
 .qr-connected>strong,.qr-waiting>strong{font-size:18px;color:var(--text-primary)}
+.qr-modal.is-connected-modal{width:min(100%,920px);max-height:min(90vh,700px)}
+.qr-modal>header.qr-connected-header{justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:0}
+.qr-connected-header>div{display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;column-gap:12px}
+.qr-connected-header h3{margin:0!important;font-size:20px!important}
+.qr-connected-header p{grid-column:2;margin:2px 0 0;color:var(--text-secondary);font-size:13px}
+.evolution-unit-card.is-connected-unit-card{display:block;padding:0;overflow:hidden}
+.evolution-connected-card-header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border-subtle)}
+.evolution-connected-card-header>div{display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;column-gap:12px}
+.evolution-connected-card-header h3{grid-column:2;margin:0;font-size:20px;line-height:1.25;color:var(--text-primary)}
+.evolution-connected-card-header p{grid-column:2;margin:2px 0 0;color:var(--text-secondary);font-size:13px}
+.is-connected-unit-card .qr-connected-layout{padding-top:8px}
+.qr-whatsapp-mark{grid-row:1/3;display:grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#e7f5ed}
+.qr-whatsapp-mark svg{width:27px;height:27px;fill:none;stroke:#087f55;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.qr-whatsapp-mark svg path+path{fill:#087f55;stroke:none}
+.qr-connected-layout{display:grid;grid-template-columns:minmax(230px,.8fr) minmax(0,1.2fr);gap:0;padding:18px 20px 22px}
+.qr-connected-primary{display:grid;justify-items:center;align-content:center;gap:12px;min-height:270px;padding:18px;text-align:center}
+.qr-success-illustration{display:grid;place-items:center;width:82px;height:82px;border-radius:50%;background:#e8f5ec}
+.qr-success-illustration svg{width:60px;height:60px}
+.qr-success-illustration circle{fill:#168957}
+.qr-success-illustration path{fill:none;stroke:#fff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.qr-connected-primary>strong{color:#087f55;font-size:21px;line-height:1.25}
+.qr-connected-primary>p{max-width:30ch;margin:0;color:var(--text-secondary);line-height:1.5}
+.qr-connected-primary>.qr-disconnect-button{width:auto;min-width:160px;margin-top:6px;border-color:#db4d55!important;border-radius:999px!important;background:#fff!important;color:#b4232d!important}
+.qr-connected-primary>.qr-disconnect-button:hover:not(:disabled){background:#fff3f3!important}
+.qr-connected-details{display:grid;align-content:center;gap:14px;padding:12px 8px 12px 34px;border-left:1px solid var(--border-subtle)}
+.qr-connected-details h4{margin:0;color:var(--text-primary);font-size:15px}
+.qr-connected-details ol{display:grid;gap:9px;margin:0;padding-left:22px;color:var(--text-secondary);font-size:14px;line-height:1.45}
+.qr-connected-details dl{display:grid;gap:9px;margin:4px 0 0}
+.qr-connected-details dl>div{display:grid;grid-template-columns:90px minmax(0,1fr);align-items:center;gap:10px}
+.qr-connected-details dt{color:var(--text-secondary);font-size:13px}
+.qr-connected-details dd{margin:0;color:var(--text-primary);font-size:13px;text-align:right;overflow-wrap:anywhere}
+.qr-connected-details dd .connection-state{font-size:12px}
+@media(max-width:640px){.qr-modal.is-connected-modal{width:min(100%,500px)}.qr-connected-layout{grid-template-columns:1fr;padding:8px 16px 18px}.qr-connected-primary{min-height:0;padding:12px 8px 20px}.qr-connected-details{padding:18px 4px 4px;border-top:1px solid var(--border-subtle);border-left:0}.qr-connected-details dl>div{grid-template-columns:76px minmax(0,1fr)}.evolution-connected-card-header{align-items:flex-start;padding:14px}.evolution-connected-card-header .connection-state{font-size:11px}.is-connected-unit-card .qr-connected-layout{padding:8px 14px 16px}}
 @media(max-width:600px){.qr-modal-backdrop{padding:12px}.qr-modal{max-height:94vh}.evolution-unit-card{padding:15px}.evolution-unit-heading h3{font-size:17px}}

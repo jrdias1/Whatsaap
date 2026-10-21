@@ -159,7 +159,7 @@ export class AppointmentsService {
     if (found.source !== 'NATIVE' || await this.agendaSource(found.tenantId, found.unitId) === 'UNO')
       throw new BadRequestException('Local changes are disabled for Uno-sourced appointments until homologation.');
     const transitions: Record<string, AppointmentStatus[]> = {
-      PENDING: ['CONFIRMED', 'CANCELLED'],
+      PENDING: ['CONFIRMED', 'NO_SHOW', 'CANCELLED'],
       CONFIRMED: ['COMPLETED', 'NO_SHOW', 'CANCELLED'],
       COMPLETED: [],
       NO_SHOW: [],
@@ -173,6 +173,9 @@ export class AppointmentsService {
     const completionCheckAt = new Date();
     if (value === 'COMPLETED' && found.startsAt > completionCheckAt) {
       throw new BadRequestException('Não é possível concluir um atendimento antes do horário agendado.');
+    }
+    if (value === 'NO_SHOW' && found.endsAt > completionCheckAt) {
+      throw new BadRequestException('Só é possível registrar falta depois do horário do atendimento.');
     }
     await this.prisma.unscoped.$transaction(async (tx) => {
       const updated = await tx.appointment.updateMany({

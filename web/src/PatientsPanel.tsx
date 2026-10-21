@@ -62,6 +62,7 @@ export default function PatientsPanel({
   request,
   units,
   role,
+  unitId,
   refreshKey,
   setNotice,
   initialPatientId = '',
@@ -72,6 +73,7 @@ export default function PatientsPanel({
   request: Request
   units: Unit[]
   role: string
+  unitId: string
   refreshKey: number
   setNotice: (message: string) => void
   initialPatientId?: string
@@ -476,7 +478,7 @@ export default function PatientsPanel({
       {result.items.map((patient) => { const patientTags = (patient.tags ?? []).map((assignment: Patient) => assignment.tag).filter(Boolean) as { id: string; name: string; color: string }[]; return <tr key={patient.id} onClick={() => { setProfile(null); setSelected(patient); setActiveTab('OVERVIEW') }} tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setProfile(null); setSelected(patient); setActiveTab('OVERVIEW') } }}><td><strong>{patient.fullName}</strong><small>{patient.email || 'Sem e-mail'}</small></td><td>{patient.phone || '—'}</td><td><div className="patient-row-tags" aria-label={patientTags.length ? `Etiquetas: ${patientTags.map((tag) => tag.name).join(', ')}` : 'Sem etiquetas'}>{patientTags.length ? patientTags.map((tag) => <span key={tag.id} style={{ borderColor: tag.color, color: tag.color }}>{tag.name}</span>) : <span className="patient-no-tags">—</span>}</div></td><td>{patient.unit?.name || 'Sem unidade'}</td><td><span className={'patient-status ' + (patient.deletedAt || !patient.active ? 'is-inactive' : 'is-active')}>{patient.deletedAt ? 'Arquivado' : patient.active ? 'Ativo' : 'Inativo'}</span></td><td>{patient.createdAt ? new Date(patient.createdAt).toLocaleDateString('pt-BR') : '—'}</td><td><button type="button" className="patient-open" onClick={(event) => { event.stopPropagation(); setProfile(null); setSelected(patient); setActiveTab('OVERVIEW') }}>Abrir perfil</button></td></tr> })}
       {!loading && result.items.length === 0 && <tr><td colSpan={7} className="patient-table-empty">Nenhum paciente encontrado com esses filtros.</td></tr>}
       </tbody></table></div><div className="patient-pagination"><button disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Anterior</button><span>Página {result.page} de {Math.max(result.totalPages, 1)}</span><button disabled={page >= result.totalPages || loading} onClick={() => setPage((current) => current + 1)}>Próxima</button></div></section>
-    {whatsappImportOpen && <WhatsappContactImport request={request} units={units} initialUnitId={unitFilter} onClose={() => setWhatsappImportOpen(false)} onImported={(message) => { setNotice(message); setRevision((value) => value + 1) }}/>}
+    {whatsappImportOpen && <WhatsappContactImport request={request} units={units} initialUnitId={unitFilter || unitId} onClose={() => setWhatsappImportOpen(false)} onImported={(message) => { setNotice(message); setRevision((value) => value + 1) }}/>}
   </div>
 
   return <div className="patients-page patient-detail-page"><button type="button" className="patient-back" onClick={() => { setSelected(null); setProfile(null) }}>← Voltar para pacientes</button>

@@ -36,8 +36,9 @@ type ProcedureReturnConfig = SharedAutomationConfig & {
 };
 type TagFlowStep = { id: string; delayMinutes: number; body: string };
 type TagFlowConfig = SharedAutomationConfig & { targetTagId: string | null; steps: TagFlowStep[] };
-type AutomationConfig = ConfirmationConfig | SatisfactionConfig | ProcedureReturnConfig | TagFlowConfig;
-const AUTOMATION_TRIGGERS = ['APPOINTMENT_CONFIRMATION', 'POST_CARE_SATISFACTION', 'PROCEDURE_RETURN', 'POST_CARE_TAG_FLOW'];
+type AppointmentMessageConfig = SharedAutomationConfig & { body: string };
+type AutomationConfig = ConfirmationConfig | SatisfactionConfig | ProcedureReturnConfig | TagFlowConfig | AppointmentMessageConfig;
+const AUTOMATION_TRIGGERS = ['APPOINTMENT_CONFIRMATION', 'APPOINTMENT_CONFIRMATION_FOLLOW_UP', 'APPOINTMENT_NO_SHOW', 'POST_CARE_SATISFACTION', 'PROCEDURE_RETURN', 'POST_CARE_TAG_FLOW'];
 type ExecutionJob = { executionId: string; kind?: 'SEND' | 'NO_RESPONSE' };
 const RETRY_LIMIT = 8;
 
@@ -112,7 +113,18 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
     if (!['ACTIVE', 'PAUSED', 'DRAFT'].includes(status)) throw new BadRequestException('Status de regra inválido.');
     const rule = await this.prisma.scoped.automation.findFirst({ where: { tenantId: scope.tenantId, id, trigger: { in: AUTOMATION_TRIGGERS } } });
     if (!rule) throw new NotFoundException('Regra não encontrada.');
-    if (status === 'ACTIVE') await this.assertRuleReferences(scope.tenantId, rule.configuration as AutomationConfig);
+    if (status === 'ACTIVE') {
+      const config = rule.configuration as AutomationConfig;
+      await this.assertRuleReferences(scope.tenantId, config);
+      if (rule.trigger === 'APPOINTMENT_CONFIRMATION_FOLLOW_UP') {
+        const confirmations = await this.prisma.scoped.automation.findMany({ where: { tenantId: scope.tenantId, trigger: 'APPOINTMENT_CONFIRMATION', status: 'ACTIVE' }, select: { configuration: true } });
+        const hasMatchingConfirmation = confirmations.some((item) => {
+          const confirmation = item.configuration as SharedAutomationConfig;
+          return confirmation.unitId === config.unitId && (!confirmation.procedureId || confirmation.procedureId === config.procedureId);
+        });
+        if (!hasMatchingConfirmation) throw new BadRequestException('Ative primeiro uma regra de confirmação para a mesma filial e procedimento.');
+      }
+    }
     const updated = await this.prisma.unscoped.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Automation" WHERE "tenantId" = ${scope.tenantId}::uuid AND id = ${id}::uuid FOR UPDATE`;
       const current = await tx.automation.findUnique({ where: { tenantId_id: { tenantId: scope.tenantId, id } }, select: { status: true } });
@@ -174,7 +186,7 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
   }
 
   private async ensureSchedules(appointment: { id: string; tenantId: string; unitId: string; patientId: string; procedureId: string | null; startsAt: Date; updatedAt: Date; completedAt: Date | null; status: string; source: string; patient: { active: boolean; deletedAt: Date | null } }, activeRules?: Array<{ id: string; tenantId: string; trigger?: string; configuration: Prisma.JsonValue; updatedAt?: Date }>) {
-    if (!['PENDING', 'CONFIRMED', 'COMPLETED'].includes(appointment.status) || !appointment.patient.active || appointment.patient.deletedAt) return;
+    if (!['PENDING', 'CONFIRMED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status) || !appointment.patient.active || appointment.patient.deletedAt) return;
     const rules = activeRules ?? await this.prisma.unscoped.automation.findMany({ where: { tenantId: appointment.tenantId, trigger: { in: AUTOMATION_TRIGGERS }, status: 'ACTIVE' } });
     for (const rule of rules) {
       const config = rule.configuration as AutomationConfig;
@@ -182,14 +194,25 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
       const isSurvey = rule.trigger === 'POST_CARE_SATISFACTION';
       const isReturn = rule.trigger === 'PROCEDURE_RETURN';
       const isTagFlow = rule.trigger === 'POST_CARE_TAG_FLOW';
+      const isNoShow = rule.trigger === 'APPOINTMENT_NO_SHOW';
+      const isConfirmationFollowUp = rule.trigger === 'APPOINTMENT_CONFIRMATION_FOLLOW_UP';
+      if (!isNoShow && !isConfirmationFollowUp && !['PENDING', 'CONFIRMED', 'COMPLETED'].includes(appointment.status)) continue;
+      if (isNoShow && (appointment.status !== 'NO_SHOW' || appointment.source !== 'NATIVE' || (rule.updatedAt && appointment.updatedAt < rule.updatedAt))) continue;
+      if (isConfirmationFollowUp && (appointment.status !== 'PENDING' || appointment.source !== 'NATIVE')) continue;
       if (isTagFlow && (appointment.status !== 'COMPLETED' || !appointment.completedAt || appointment.source !== 'NATIVE' || (rule.updatedAt && appointment.completedAt < rule.updatedAt))) continue;
       if (isTagFlow && (config as TagFlowConfig).targetTagId && !(await this.prisma.unscoped.patientTag.findFirst({ where: { tenantId: appointment.tenantId, patientId: appointment.patientId, tagId: (config as TagFlowConfig).targetTagId!, tag: { tenantId: appointment.tenantId } }, select: { tagId: true } }))) continue;
       if (isSurvey && (appointment.completedAt ?? appointment.updatedAt) < new Date(Date.now() - 30 * 86400000)) continue;
       if (isReturn && (appointment.status !== 'COMPLETED' || !appointment.completedAt || appointment.source !== 'NATIVE' || !appointment.procedureId || appointment.procedureId !== config.procedureId)) continue;
-      if (!isReturn && !isTagFlow && isSurvey !== (appointment.status === 'COMPLETED')) continue;
+      if (!isReturn && !isTagFlow && !isNoShow && isSurvey !== (appointment.status === 'COMPLETED')) continue;
       if (isReturn && appointment.status !== 'COMPLETED') continue;
       let scheduledAt: Date | null;
-      if (isReturn) {
+      if (isNoShow) {
+        scheduledAt = this.allowedContactTimeAfter(new Date(appointment.updatedAt.getTime() + config.advanceMinutes * 60_000), config.allowedStartHour, config.allowedEndHour);
+      } else if (isConfirmationFollowUp) {
+        const hasConfirmationRule = rules.some((candidate) => candidate.tenantId === appointment.tenantId && candidate.trigger === 'APPOINTMENT_CONFIRMATION' && (candidate.configuration as AutomationConfig).unitId === appointment.unitId && (!(candidate.configuration as AutomationConfig).procedureId || (candidate.configuration as AutomationConfig).procedureId === appointment.procedureId));
+        if (!hasConfirmationRule) continue;
+        scheduledAt = this.allowedContactTime(new Date(appointment.startsAt.getTime() - config.advanceMinutes * 60_000), appointment.startsAt, config.allowedStartHour, config.allowedEndHour);
+      } else if (isReturn) {
         const procedure = await this.prisma.unscoped.procedure.findFirst({ where: { tenantId: appointment.tenantId, id: appointment.procedureId!, active: true, OR: [{ unitId: appointment.unitId }, { unitId: null }] }, select: { returnAfterDays: true, reminderAdvanceDays: true } });
         if (!procedure || procedure.returnAfterDays == null || procedure.reminderAdvanceDays == null || procedure.reminderAdvanceDays > procedure.returnAfterDays) {
           await this.prisma.unscoped.auditEvent.create({ data: { tenantId: appointment.tenantId, action: 'PROCEDURE_RETURN_MISSING_CONFIGURATION', entityType: 'Appointment', entityId: appointment.id, metadata: { procedureId: appointment.procedureId, automationId: rule.id } } });
@@ -211,7 +234,8 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
         ? this.allowedContactTimeAfter(new Date((appointment.completedAt ?? appointment.updatedAt).getTime() + config.advanceMinutes * 60_000), config.allowedStartHour, config.allowedEndHour)
         : this.allowedContactTime(new Date(appointment.startsAt.getTime() - config.advanceMinutes * 60_000), appointment.startsAt, config.allowedStartHour, config.allowedEndHour);
       if (!scheduledAt) continue;
-      const idempotencyKey = `${isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation'}:${rule.id}:${appointment.id}:${appointment.startsAt.toISOString()}`;
+      const keyPrefix = isNoShow ? 'appointment-no-show' : isConfirmationFollowUp ? 'appointment-confirmation-follow-up' : isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation';
+      const idempotencyKey = `${keyPrefix}:${rule.id}:${appointment.id}:${isNoShow ? appointment.updatedAt.toISOString() : appointment.startsAt.toISOString()}`;
       await this.prisma.unscoped.automationExecution.createMany({ data: [{ tenantId: appointment.tenantId, unitId: appointment.unitId, automationId: rule.id, appointmentId: appointment.id, patientId: appointment.patientId, idempotencyKey, status: 'PENDING', scheduledAt }], skipDuplicates: true });
       await this.prisma.unscoped.automationExecution.updateMany({ where: { tenantId: appointment.tenantId, idempotencyKey, status: 'CANCELLED', outboxMessageId: null }, data: { status: 'PENDING', scheduledAt, lastError: null, executedAt: null } });
     }
@@ -258,6 +282,7 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
       ...(tenantId ? { tenantId } : {}),
       OR: [
         { status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gte: now, lte: new Date(now.getTime() + 30 * 86400000) } },
+        { status: 'NO_SHOW', updatedAt: { gte: new Date(now.getTime() - 30 * 86400000) } },
         { status: 'COMPLETED', completedAt: { gte: completedCutoff } },
         { status: 'COMPLETED', completedAt: null, updatedAt: { gte: surveyCutoff } },
       ],
@@ -341,8 +366,20 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
           : config.humanKeywords.includes(normalized) ? 'HUMAN' : null;
       return action && !['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(row.appointment.status) ? [{ row, config, action }] : [];
     });
+    const repliedAppointmentIds = rows.filter((row) => row.outboxMessageId && ready.has(row.outboxMessageId)).map((row) => row.appointmentId);
+    const cancelUnansweredFollowUps = async (action = 'OTHER') => {
+      if (!repliedAppointmentIds.length) return;
+      await tx.automationExecution.updateMany({ where: { tenantId, appointmentId: { in: repliedAppointmentIds }, automation: { trigger: 'APPOINTMENT_CONFIRMATION_FOLLOW_UP' }, status: 'PENDING' }, data: { status: 'CANCELLED', responseAction: action, lastError: 'Patient replied before the reminder.' } });
+      await tx.automationExecution.updateMany({ where: { tenantId, appointmentId: { in: repliedAppointmentIds }, automation: { trigger: 'APPOINTMENT_CONFIRMATION_FOLLOW_UP' }, status: 'OUTBOXED' }, data: { status: 'RESPONDED', responseAction: action } });
+    };
     // A bare keyword is only enough when it identifies one pending appointment.
-    if (matched.length !== 1) return 'UNRECOGNIZED';
+    if (matched.length !== 1) {
+      if (repliedAppointmentIds.length) {
+        await tx.automationExecution.updateMany({ where: { tenantId, id: { in: rows.filter((row) => row.outboxMessageId && ready.has(row.outboxMessageId)).map((row) => row.id) }, status: 'OUTBOXED' }, data: { status: 'RESPONDED', responseAction: 'OTHER' } });
+        await cancelUnansweredFollowUps();
+      }
+      return 'UNRECOGNIZED';
+    }
     const { row, config, action } = matched[0]!;
     {
       if (action === 'CONFIRM' && row.appointment.source === 'NATIVE' && row.appointment.status === 'PENDING') {
@@ -352,6 +389,7 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
         await this.createExceptionTask(tx, row.tenantId, row.unitId, row.patientId, row.automation.createdById ?? config.responsibleUserId, row.appointmentId, row.automationId, action, providerMessageId);
       }
       await tx.automationExecution.update({ where: { tenantId_id: { tenantId, id: row.id } }, data: { status: action === 'CONFIRM' && row.appointment.source === 'UNO' ? 'RESPONSE_REQUIRES_MANUAL_UNO_ACTION' : 'RESPONDED', responseAction: action, lastError: action === 'CONFIRM' && row.appointment.source === 'UNO' ? 'Uno write remains disabled; human action required.' : null } });
+      await cancelUnansweredFollowUps(action);
       return action;
     }
   }
@@ -464,13 +502,41 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
       const isSurvey = execution.automation.trigger === 'POST_CARE_SATISFACTION';
       const isReturn = execution.automation.trigger === 'PROCEDURE_RETURN';
       const isTagFlow = execution.automation.trigger === 'POST_CARE_TAG_FLOW';
+      const isNoShow = execution.automation.trigger === 'APPOINTMENT_NO_SHOW';
+      const isConfirmationFollowUp = execution.automation.trigger === 'APPOINTMENT_CONFIRMATION_FOLLOW_UP';
       const config = execution.automation.configuration as AutomationConfig;
       const fail = async (status: string, reason: string) => tx.automationExecution.update({ where: { tenantId_id: { tenantId: execution.tenantId, id } }, data: { status, executedAt: new Date(), lastError: reason } });
-      const expectedIdempotencyKey = isTagFlow ? `tag-post-care:${execution.automationId}:${execution.appointmentId}:${execution.stepKey}` : `${isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation'}:${execution.automationId}:${execution.appointmentId}:${execution.appointment.startsAt.toISOString()}`;
+      const keyPrefix = isNoShow ? 'appointment-no-show' : isConfirmationFollowUp ? 'appointment-confirmation-follow-up' : isTagFlow ? 'tag-post-care' : isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation';
+      const keyDate = isNoShow ? execution.appointment.updatedAt.toISOString() : execution.appointment.startsAt.toISOString();
+      const expectedIdempotencyKey = isTagFlow ? `tag-post-care:${execution.automationId}:${execution.appointmentId}:${execution.stepKey}` : `${keyPrefix}:${execution.automationId}:${execution.appointmentId}:${keyDate}`;
       if (execution.idempotencyKey !== expectedIdempotencyKey) return fail('CANCELLED', 'Appointment time changed; stale confirmation was cancelled.');
       if (execution.automation.status !== 'ACTIVE') return fail('CANCELLED', 'Automation is paused or inactive.');
       if (execution.scheduledAt > new Date()) return;
-      if (isReturn ? execution.appointment.status !== 'COMPLETED' || execution.appointment.source !== 'NATIVE' || execution.appointment.procedureId !== (config as ProcedureReturnConfig).procedureId : isSurvey || isTagFlow ? execution.appointment.status !== 'COMPLETED' : (!['PENDING', 'CONFIRMED'].includes(execution.appointment.status) || execution.appointment.startsAt <= new Date())) return fail('CANCELLED', 'Appointment is no longer eligible for this automation.');
+      if (isNoShow ? execution.appointment.status !== 'NO_SHOW' || execution.appointment.source !== 'NATIVE' : isConfirmationFollowUp ? execution.appointment.status !== 'PENDING' || execution.appointment.source !== 'NATIVE' || execution.appointment.startsAt <= new Date() : isReturn ? execution.appointment.status !== 'COMPLETED' || execution.appointment.source !== 'NATIVE' || execution.appointment.procedureId !== (config as ProcedureReturnConfig).procedureId : isSurvey || isTagFlow ? execution.appointment.status !== 'COMPLETED' : (!['PENDING', 'CONFIRMED'].includes(execution.appointment.status) || execution.appointment.startsAt <= new Date())) return fail('CANCELLED', 'Appointment is no longer eligible for this automation.');
+      if (isNoShow) {
+        const laterAppointment = await tx.appointment.findFirst({ where: { tenantId: execution.tenantId, patientId: execution.patientId, status: { in: ['PENDING', 'CONFIRMED'] }, startsAt: { gt: execution.appointment.startsAt } }, select: { id: true } });
+        if (laterAppointment) return fail('SUPPRESSED', 'Patient already has a new appointment.');
+        const due = this.allowedContactTimeAfter(new Date(execution.appointment.updatedAt.getTime() + config.advanceMinutes * 60_000), config.allowedStartHour, config.allowedEndHour);
+        if (!due || execution.scheduledAt.getTime() < due.getTime() - 60_000) return fail('CANCELLED', 'No-show follow-up schedule changed.');
+      }
+      let confirmationFollowUpAllowance: { outboxId: string; sentAt: Date } | undefined;
+      if (isConfirmationFollowUp) {
+          const confirmationCandidate = await tx.automationExecution.findFirst({ where: { tenantId: execution.tenantId, appointmentId: execution.appointmentId, status: 'OUTBOXED', automation: { trigger: 'APPOINTMENT_CONFIRMATION' }, outboxMessageId: { not: null } }, select: { id: true, outboxMessageId: true } });
+          if (!confirmationCandidate?.outboxMessageId) return fail('SUPPRESSED', 'The appointment confirmation was not sent.');
+          await tx.$queryRaw`SELECT id FROM "AutomationExecution" WHERE "tenantId" = ${execution.tenantId}::uuid AND id = ${confirmationCandidate.id}::uuid FOR UPDATE`;
+          const confirmation = await tx.automationExecution.findFirst({ where: { tenantId: execution.tenantId, id: confirmationCandidate.id, status: 'OUTBOXED' }, select: { outboxMessageId: true } });
+          const sentConfirmation = confirmation?.outboxMessageId ? await tx.outboxMessage.findFirst({ where: { tenantId: execution.tenantId, id: confirmation.outboxMessageId, status: { in: ['SIMULATED', 'SENT'] } }, select: { id: true, createdAt: true, sentAt: true } }) : null;
+          if (!sentConfirmation) return fail('SUPPRESSED', 'The appointment confirmation was not sent.');
+          const confirmationAt = sentConfirmation.sentAt ?? sentConfirmation.createdAt;
+          const [patientReply, humanReply] = await Promise.all([
+            tx.message.findFirst({ where: { tenantId: execution.tenantId, direction: 'INBOUND', createdAt: { gt: confirmationAt }, conversation: { tenantId: execution.tenantId, patientId: execution.patientId } }, select: { id: true } }),
+            tx.message.findFirst({ where: { tenantId: execution.tenantId, direction: 'OUTBOUND', actor: 'HUMAN', createdAt: { gt: confirmationAt }, conversation: { tenantId: execution.tenantId, patientId: execution.patientId } }, select: { id: true } }),
+          ]);
+          if (patientReply || humanReply) return fail('SUPPRESSED', 'A patient or team member already replied to the confirmation.');
+          confirmationFollowUpAllowance = { outboxId: sentConfirmation.id, sentAt: confirmationAt };
+        const due = this.allowedContactTime(new Date(execution.appointment.startsAt.getTime() - config.advanceMinutes * 60_000), execution.appointment.startsAt, config.allowedStartHour, config.allowedEndHour);
+        if (!due || Math.abs(due.getTime() - execution.scheduledAt.getTime()) > 60_000) return fail('CANCELLED', 'Confirmation reminder schedule changed.');
+      }
       if (isTagFlow) {
         const flow = config as TagFlowConfig;
         const step = flow.steps.find((item) => item.id === execution.stepKey);
@@ -488,7 +554,7 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
       }
       if (!execution.patient.active || execution.patient.deletedAt) return fail('SUPPRESSED', 'Patient is archived or inactive.');
       await tx.$queryRaw`SELECT id FROM "Patient" WHERE "tenantId" = ${execution.tenantId}::uuid AND id = ${execution.patientId}::uuid FOR UPDATE`;
-      const patientContactGate = await this.patientAutomationGate(tx, execution.tenantId, execution.patientId, new Date(), config.allowedStartHour, config.allowedEndHour);
+      const patientContactGate = await this.patientAutomationGate(tx, execution.tenantId, execution.patientId, new Date(), config.allowedStartHour, config.allowedEndHour, confirmationFollowUpAllowance);
       if (patientContactGate) {
         await tx.automationExecution.update({ where: { tenantId_id: { tenantId: execution.tenantId, id } }, data: { scheduledAt: patientContactGate.until, lastError: patientContactGate.reason } });
         return;
@@ -516,8 +582,9 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
         const prior = await tx.automationExecution.count({ where: { tenantId: execution.tenantId, patientId: execution.patientId, automation: { trigger: 'PROCEDURE_RETURN' }, appointment: { procedureId: returnConfig.procedureId }, id: { not: execution.id }, status: { in: ['OUTBOXED', 'RESPONDED', 'NO_RESPONSE', 'NO_RESPONSE_TASK_CREATED'] } } });
         if (prior >= returnConfig.maxContactsPerPatient) return fail('SUPPRESSED', 'Patient return-contact limit reached.');
       }
-      const text = isSurvey ? this.renderSurvey(config as SatisfactionConfig, execution.patient.fullName) : isReturn ? this.render((config as ProcedureReturnConfig).body, execution.patient.fullName, execution.appointment.startsAt) : isTagFlow ? this.render((config as TagFlowConfig).steps.find((step) => step.id === execution.stepKey)!.body, execution.patient.fullName, execution.appointment.startsAt) : this.render((config as ConfirmationConfig).body, execution.patient.fullName, execution.appointment.startsAt);
-      const outbox = await tx.outboxMessage.create({ data: { tenantId: execution.tenantId, patientId: execution.patientId, purpose, channel: 'WHATSAPP', provider: config.provider, connectionId: connection.id, body: text, idempotencyKey: `automation:${execution.id}:${isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : isTagFlow ? 'tag-post-care' : 'confirmation'}`, scheduledAt: new Date() } });
+      const text = isSurvey ? this.renderSurvey(config as SatisfactionConfig, execution.patient.fullName) : isTagFlow ? this.render((config as TagFlowConfig).steps.find((step) => step.id === execution.stepKey)!.body, execution.patient.fullName, execution.appointment.startsAt) : this.render((config as AppointmentMessageConfig).body, execution.patient.fullName, execution.appointment.startsAt);
+      const outboxPurpose = isNoShow ? 'appointment-no-show' : isConfirmationFollowUp ? 'appointment-confirmation-follow-up' : isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : isTagFlow ? 'tag-post-care' : 'confirmation';
+      const outbox = await tx.outboxMessage.create({ data: { tenantId: execution.tenantId, patientId: execution.patientId, purpose, channel: 'WHATSAPP', provider: config.provider, connectionId: connection.id, body: text, idempotencyKey: `automation:${execution.id}:${outboxPurpose}`, scheduledAt: new Date() } });
       if (isSurvey) {
         const surveyConfig = config as SatisfactionConfig;
         const survey = await tx.satisfactionSurvey.create({ data: { tenantId: execution.tenantId, unitId: execution.unitId, automationId: execution.automationId, executionId: execution.id, appointmentId: execution.appointmentId, patientId: execution.patientId, procedureId: execution.appointment.procedureId, provider: config.provider, question: surveyConfig.question, version: surveyConfig.version, state: 'OUTBOXED', expiresAt: new Date(Date.now() + surveyConfig.responseWindowHours * 60 * 60_000), outboxMessageId: outbox.id } });
@@ -559,20 +626,27 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
     await tx.taskHistory.create({ data: { tenantId, taskId: task.id, actorUserId: responsibleUserId, action: 'AUTOMATION_CREATED', after: { appointmentId, responseAction: action } } });
   }
 
-  private async cancelAppointmentExecutions(appointment: { id: string; tenantId: string; startsAt: Date; status: string }, reason: string) {
+  private async cancelAppointmentExecutions(appointment: { id: string; tenantId: string; startsAt: Date; updatedAt: Date; status: string }, reason: string) {
     const rows = await this.prisma.unscoped.automationExecution.findMany({ where: { tenantId: appointment.tenantId, appointmentId: appointment.id, status: { in: ['PENDING', 'PROCESSING', 'OUTBOXED'] } }, select: { id: true, outboxMessageId: true, idempotencyKey: true, stepKey: true, automationId: true, automation: { select: { trigger: true, status: true } } } });
     const stale = rows.filter((row) => {
       const isSurvey = row.automation.trigger === 'POST_CARE_SATISFACTION';
       const isReturn = row.automation.trigger === 'PROCEDURE_RETURN';
       const isTagFlow = row.automation.trigger === 'POST_CARE_TAG_FLOW';
+       const isNoShow = row.automation.trigger === 'APPOINTMENT_NO_SHOW';
+       const isConfirmationFollowUp = row.automation.trigger === 'APPOINTMENT_CONFIRMATION_FOLLOW_UP';
       const eligible = isReturn
         ? appointment.status === 'COMPLETED'
         : isTagFlow
         ? appointment.status === 'COMPLETED'
         : isSurvey
         ? appointment.status === 'COMPLETED'
+         : isNoShow
+         ? appointment.status === 'NO_SHOW'
+         : isConfirmationFollowUp
+         ? appointment.status === 'PENDING' && appointment.startsAt > new Date()
         : ['PENDING', 'CONFIRMED'].includes(appointment.status) && appointment.startsAt > new Date();
-      const expectedKey = isTagFlow ? `tag-post-care:${row.automationId}:${appointment.id}:${row.stepKey}` : `${isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation'}:${row.automationId}:${appointment.id}:${appointment.startsAt.toISOString()}`;
+       const prefix = isNoShow ? 'appointment-no-show' : isConfirmationFollowUp ? 'appointment-confirmation-follow-up' : isReturn ? 'procedure-return' : isSurvey ? 'satisfaction-survey' : 'appointment-confirmation';
+       const expectedKey = isTagFlow ? `tag-post-care:${row.automationId}:${appointment.id}:${row.stepKey}` : `${prefix}:${row.automationId}:${appointment.id}:${isNoShow ? appointment.updatedAt.toISOString() : appointment.startsAt.toISOString()}`;
       return row.automation.status !== 'ACTIVE' || !eligible || row.idempotencyKey !== expectedKey;
     });
     if (!stale.length) return;
@@ -655,6 +729,9 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
       const thankYou = { EXCELLENT: this.text(thank.EXCELLENT ?? 'Muito obrigado por compartilhar sua experiência!', 'Agradecimento Ótimo', 2, 500), GOOD: this.text(thank.GOOD ?? 'Obrigado por avaliar sua experiência!', 'Agradecimento Bom', 2, 500), REGULAR: this.text(thank.REGULAR ?? 'Obrigado por contar como foi sua experiência.', 'Agradecimento Regular', 2, 500), POOR: this.text(thank.POOR ?? 'Obrigado por nos avisar. Nossa equipe vai acompanhar seu relato.', 'Agradecimento Ruim', 2, 500), VERY_POOR: this.text(thank.VERY_POOR ?? 'Obrigado por nos avisar. Nossa equipe vai acompanhar seu relato.', 'Agradecimento Péssimo', 2, 500) };
       return { ...shared, opening: this.text(raw.opening ?? 'Olá {{paciente.nome}}!', 'Abertura', 2, 500), question: this.text(raw.question ?? 'Como você classifica sua experiência?', 'Pergunta', 2, 1000), responseWindowHours: integer('responseWindowHours', 1, 720, 24), version: integer('version', 1, 1000, 1), thankYou, regularAction: raw.regularAction === 'CREATE_TASK' ? 'CREATE_TASK' : 'NONE', noResponseAction: raw.noResponseAction === 'CREATE_TASK' ? 'CREATE_TASK' : 'NONE' };
     }
+    if (trigger === 'APPOINTMENT_NO_SHOW' || trigger === 'APPOINTMENT_CONFIRMATION_FOLLOW_UP') {
+      return { ...shared, body: this.text(raw.body, 'Mensagem', 2, 4000) };
+    }
     const body = this.text(raw.body, 'Mensagem', 2, 4000);
     const noResponseAction = raw.noResponseAction === 'CREATE_TASK' ? 'CREATE_TASK' : 'NONE';
     return { ...shared, body, confirmKeywords: list('confirmKeywords', ['CONFIRMAR']), rescheduleKeywords: list('rescheduleKeywords', ['REAGENDAR']), humanKeywords: list('humanKeywords', ['ATENDENTE', 'HUMANO']), noResponseAction };
@@ -682,22 +759,31 @@ export class AutomationsService extends WorkerHost implements OnModuleInit, OnMo
     return null;
   }
 
-  private async patientAutomationGate(tx: Prisma.TransactionClient, tenantId: string, patientId: string, now: Date, startHour: number, endHour: number) {
+  private async patientAutomationGate(tx: Prisma.TransactionClient, tenantId: string, patientId: string, now: Date, startHour: number, endHour: number, confirmationFollowUpAllowance?: { outboxId: string; sentAt: Date }) {
     const { start, end } = this.saoPauloDay(now);
     const conversation = await tx.conversation.findFirst({
       where: { tenantId, patientId, OR: [{ status: { in: ['OPEN', 'WAITING_HUMAN'] } }, { lastMessageAt: { gte: new Date(now.getTime() - 30 * 60_000) } }] },
       orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }], select: { status: true, lastMessageAt: true },
     });
     if (conversation) {
-      const candidate = new Date(Math.max(now.getTime() + 30 * 60_000, conversation.lastMessageAt.getTime() + 30 * 60_000));
-      const until = this.allowedContactTimeAfter(candidate, startHour, endHour);
-      if (until) return { until, reason: 'Adiada: conversa ativa ou atividade recente da equipe/paciente.' };
+      const quietAfterConfirmation = confirmationFollowUpAllowance
+        && conversation.status === 'OPEN'
+        && conversation.lastMessageAt.getTime() <= confirmationFollowUpAllowance.sentAt.getTime() + 10_000;
+      if (!quietAfterConfirmation) {
+        const candidate = new Date(Math.max(now.getTime() + 30 * 60_000, conversation.lastMessageAt.getTime() + 30 * 60_000));
+        const until = this.allowedContactTimeAfter(candidate, startHour, endHour);
+        if (until) return { until, reason: 'Adiada: conversa ativa ou atividade recente da equipe/paciente.' };
+      }
     }
-    const [alreadyContactedToday, humanMessageToday] = await Promise.all([
+    const [alreadyContactedToday, humanMessageToday, sameDayConfirmation, otherAutomationMessagesToday] = await Promise.all([
       tx.outboxMessage.findFirst({ where: { tenantId, patientId, status: { in: ['SIMULATED', 'SENT'] }, sentAt: { gte: start, lt: end } }, select: { id: true } }),
       tx.message.findFirst({ where: { tenantId, direction: 'OUTBOUND', status: { in: ['QUEUED', 'SIMULATED', 'SENT', 'DELIVERED', 'READ'] }, createdAt: { gte: start, lt: end }, conversation: { tenantId, patientId } }, select: { id: true } }),
+      confirmationFollowUpAllowance ? tx.outboxMessage.findFirst({ where: { tenantId, patientId, id: confirmationFollowUpAllowance.outboxId, status: { in: ['SIMULATED', 'SENT'] }, sentAt: { gte: start, lt: end } }, select: { id: true } }) : Promise.resolve(null),
+      confirmationFollowUpAllowance ? tx.outboxMessage.count({ where: { tenantId, patientId, status: { in: ['SIMULATED', 'SENT'] }, sentAt: { gte: start, lt: end }, id: { not: confirmationFollowUpAllowance.outboxId } } }) : Promise.resolve(0),
     ]);
     if (alreadyContactedToday || humanMessageToday) {
+      const onlyPreviousConfirmationToday = Boolean(confirmationFollowUpAllowance && sameDayConfirmation && !otherAutomationMessagesToday && !humanMessageToday);
+      if (onlyPreviousConfirmationToday) return null;
       const until = this.allowedContactTimeAfter(new Date(end.getTime() + 9 * 60 * 60_000), startHour, endHour);
       if (until) return { until, reason: 'Adiada: outra mensagem automática já foi processada hoje.' };
     }

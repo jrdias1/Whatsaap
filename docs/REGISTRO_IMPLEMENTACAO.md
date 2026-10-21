@@ -383,3 +383,20 @@ Este registro reúne as mudanças locais retomadas nesta data e aponta para o es
 - Migrations são aditivas e locais; sem envio Meta/Evolution, escrita/consulta Uno, operação remota ou cobrança.
 - Referências por funcionalidade: [Matriz de funcionalidades](./MATRIZ_FUNCIONALIDADES.md), [Fase 8 — consolidação operacional](./FASE_8_CONSOLIDACAO_OPERACIONAL.md), [Identidade visual](./IDENTIDADE_VISUAL_E_DESIGN_SYSTEM.md), [Integridade dos textos](./INTEGRIDADE_TEXTOS.md) e [Revisão de 20/10](./REVISAO_2026-10-20.md).
 
+
+
+### Regras de lembrete e falta — 20/10/2026
+
+- A tela de Automações lista e permite editar o lembrete sem resposta e o acompanhamento após falta, no mesmo editor e com os mesmos controles de status das demais regras.
+- O lembrete exige uma confirmação registrada para o mesmo agendamento e é cancelado quando chega qualquer resposta do paciente. Uma mensagem posterior da equipe também impede o envio.
+- O acompanhamento de falta só pode ocorrer depois do fim do atendimento e em agendamentos da Agenda nativa. A mensagem é suprimida se o paciente já tiver outro agendamento futuro. A equipe atende as respostas no Inbox; o sistema não cria outro agendamento automaticamente.
+- As duas regras continuam exigindo consentimento, canal conectado, cota disponível e horário permitido. As mensagens permanecem simuladas; nenhum envio externo foi habilitado.
+- Não foi necessária migration, pois os gatilhos usam o campo de automação existente. Naquele passo não foram executados testes ou builds; a validação posterior desta retomada está registrada abaixo.
+
+### Catálogo de automações, mensagens de agenda e importação de contatos — 20/10/2026
+
+- A aba **Automações cadastradas** reúne regras ativas, pausadas e em rascunho, com busca por nome/filial/canal, filtro por estado, edição, histórico de execuções e ativação/pausa. Os tipos de regra incluem lembrete de confirmação sem resposta e acompanhamento após falta, além dos fluxos já existentes.
+- O lembrete sem resposta depende de uma confirmação previamente registrada para o mesmo agendamento. Uma resposta do paciente ou uma intervenção humana cancela o lembrete pendente. A falta só pode ser registrada depois do fim do horário e vale para a Agenda nativa; o acompanhamento não é criado se já houver novo agendamento futuro. A equipe continua responsável por responder e reagendar.
+- **Canais:** quando uma filial está conectada, o próprio cartão passa a exibir confirmação, instruções de conexão, estado, instância e opção de desconectar. A ação de desconexão usa o ID da conexão e a filial correspondentes. O painel detalhado do QR permanece disponível durante a conexão.
+- **Importar do WhatsApp:** ao abrir a janela, a lista de contatos da filial é consultada automaticamente. A busca e seleção podem ser usadas antes da importação; a operação envia lotes de até 500 contatos e informa resultados parciais se algum lote falhar. Importar contato não presume consentimento de marketing. Nenhuma mensagem é enviada por esse fluxo.
+- **Validação desta retomada:** `npm run build` do Web passou em 20/10/2026, incluindo TypeScript, Vite e `check:text`. API, E2E e conexão real não foram testados novamente nesta retomada; a compilação não comprova entrega externa de mensagens.
